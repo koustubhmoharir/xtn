@@ -1,0 +1,14 @@
+{
+    "key1": "value1",
+    "key2": {
+        "key3": "value3",
+        "key4": [
+            "value41",
+            "value42"
+        ],
+        "key5": {
+            "key6": "value6"
+        },
+        "key7": "value7 a\nvalue7 b"
+    }
+}
