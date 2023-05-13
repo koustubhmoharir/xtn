@@ -1,6 +1,6 @@
 # xtn
 
-Sample code
+## Sample code
 ```
 import xtn
 
