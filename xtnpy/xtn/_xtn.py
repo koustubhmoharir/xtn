@@ -60,9 +60,9 @@ class XtnArray(XtnDataElement):
 
 
 class XtnObject(XtnDataElement):
-    def __init__(self, elements: dict[str, XtnDataElement], comments: list[XtnComment] | None = None, trail_comments: list[XtnComment] | None = None) -> None:
+    def __init__(self, elements: dict[str, XtnDataElement] | None = None, comments: list[XtnComment] | None = None, trail_comments: list[XtnComment] | None = None) -> None:
         super().__init__(comments, trail_comments)
-        self.elements = elements
+        self.elements = {} if elements is None else elements
 
     @staticmethod
     def load(f: TextIO):
@@ -114,7 +114,7 @@ class XtnObject(XtnDataElement):
                 lines = sv.splitlines()
                 if sv.endswith('\n'):
                     lines.append('')
-                if data.force_multiline or len(lines) > 1 or sv[0:1].isspace() or sv[-1:].isspace():
+                if data.force_multiline or len(lines) > 1 or sv[0:1].isspace() or sv[-1:].isspace() or any(m.group(0) != ' ' for m in re.finditer(r'\s', sv)):
                     marker_len = max((len(m.group(0)) for m in re.finditer(r'`+', sv)), default=0)
                     marker_len = min(marker_len, 4)
                     marker = (4 if marker_len < 3 else marker_len + (3 if marker_len % 2 == 1 else 4)) * "'"

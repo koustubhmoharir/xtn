@@ -1,0 +1,2 @@
+# The spaces in the value are non-breaking spaces '\xa0' in Python
+key1: a  b    c d

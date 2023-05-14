@@ -1,4 +1,6 @@
-# xtn
+## xtn Repository
+
+[On Github](https://github.com/koustubhmoharir/xtn)
 
 ## Sample code
 ```

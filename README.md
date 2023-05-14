@@ -1,5 +1,9 @@
 # xtn
-xtn stands for eXtensible Text Notation. It is a format for defining "objects" in text - useful for configuration or some kinds of DSLs. The main goal of the format is to avoid escaping rules for values enabling easy definition of file paths, regular expressions, code fragments in any language, etc. This format was created because none of the options in widespread use (such as JSON, XML, YAML, TOML, INI) work well enough for this purpose.
+xtn stands for eXtensible Text Notation. It is a format for defining "objects" in text - useful for configuration or some kinds of DSLs. The main goal of the format is to avoid escaping rules for values enabling easy and robust definition of file paths, regular expressions, code fragments in any language, etc. This format was created because none of the options in widespread use (such as JSON, XML, YAML, TOML, INI) work well enough for this purpose.
+
+## Specification
+
+[Specification for end users of the format](spec.md)
 
 ## Principles
 
@@ -14,5 +18,5 @@ xtn stands for eXtensible Text Notation. It is a format for defining "objects" i
     - In particular, it is possible to embed text in any format including xtn itself within a value, without requiring any transformations to the embedded text whatsoever.
 
 ## Implementations
-Python - xtn package
+Python - [xtn package](https://pypi.org/project/xtn/)
 

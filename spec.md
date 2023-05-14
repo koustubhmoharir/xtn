@@ -1,7 +1,7 @@
 # Human readable specification
 
 ## Basics
-Newlines are significant. Other whitespace is insignificant in most places, but indentation of 4 spaces (not tabs) per level of nesting is recommended for readability. Detailed specification are in each section.
+Newlines are significant. Other whitespace is insignificant in most places, but indentation of 4 spaces (not tabs) per level of nesting is recommended for readability. Detailed specifications are in the sections below.
 
 Casing is significant, but applications that consume this format may ignore it.
 
