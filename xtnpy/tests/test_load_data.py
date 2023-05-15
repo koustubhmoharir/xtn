@@ -1,6 +1,7 @@
 from . import utils
 from pathlib import Path
 import xtn
+import pytest
 
 def exact_match(name: str):
     x = utils.load_sample_xtn(name)
@@ -19,3 +20,23 @@ def test_load_sample1():
 def test_convert_nbsp():
     obj = utils.load_sample_xtn('convert_nbsp')
     assert obj['key1'] == 'a  b    c d'
+
+def test_load_missing_braces():
+    with pytest.raises(xtn.XtnException):
+        utils.load_sample_xtn('missing_braces')
+
+def test_load_missing_braces2():
+    with pytest.raises(xtn.XtnException):
+        utils.load_sample_xtn('missing_braces2')
+
+def test_load_missing_brackets():
+    with pytest.raises(xtn.XtnException):
+        utils.load_sample_xtn('missing_brackets')
+
+def test_extra_close():
+    with pytest.raises(xtn.XtnException):
+        utils.load_sample_xtn('extra_close')
+
+def test_missing_close():
+    with pytest.raises(xtn.XtnException):
+        utils.load_sample_xtn('missing_close')

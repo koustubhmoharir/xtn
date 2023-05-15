@@ -12,6 +12,8 @@ class XtnErrorCode(Enum):
     PLUS_ENCOUNTERED_OUTSIDE_ARRAY = 5
     ARRAY_ELEMENT_MUST_START_WITH_PLUS = 6
     MULTILINE_MARKER_TOO_SHORT = 7
+    UNMATCHED_CLOSE_MARKER = 8
+    MISSING_CLOSE_MARKER = 9
 
 
 class XtnException(Exception):
@@ -236,6 +238,7 @@ def _load(f: TextIO, target: XtnObject | None) -> dict[str, Any]:
             target.trail_comments = comments.copy()
             comments.clear()
 
+    i = -1
     for i, line in enumerate(f):
         state = stack[-1]
         if state.mode == _Mode.MULTILINE:
@@ -322,7 +325,11 @@ def _load(f: TextIO, target: XtnObject | None) -> dict[str, Any]:
                     stack.pop()
                 attach_trailing_comments(stack[-1].target)
                 stack.pop()
-
+                if len(stack) == 0:
+                    raise_error(XtnErrorCode.UNMATCHED_CLOSE_MARKER, "The close marker ---- does not match any open object or array")
+    i += 1
+    if len(stack) > 1:
+        raise_error(XtnErrorCode.MISSING_CLOSE_MARKER, "A close marker ---- was expected")
     return top_level
 
 
