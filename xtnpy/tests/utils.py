@@ -2,7 +2,7 @@ import xtn
 import json
 from pathlib import Path
 
-samples_dir = Path(__file__).parent.joinpath('../../samples')
+samples_dir = Path(__file__).parent.joinpath('../../samples').resolve()
 
 def sample_xtn_path(name: str):
     return samples_dir.joinpath(f'{name}.xtn')
