@@ -13,7 +13,10 @@ def match_error(name: str, code: xtn.XtnErrorCode, line: int):
     with pytest.raises(xtn.XtnException) as ex:
         utils.load_sample_xtn(name)
     assert ex.value.code == code
-    assert re.match(r'.*?:' + str(line) + ': error: ', ex.value.message) != None
+    m = re.search(r'^.*?:(\d+): error: ', ex.value.message)
+    assert m is not None
+    err_line = m.group(1)
+    assert err_line == str(line)
 
 def test_load_sample1():
     exact_match('sample1')
@@ -32,14 +35,40 @@ def test_load_missing_braces():
     match_error('missing_braces', xtn.XtnErrorCode.UNMATCHED_CLOSE_MARKER, 3)
 
 def test_load_missing_braces2():
-    match_error('missing_braces2', xtn.XtnErrorCode.ARRAY_ELEMENT_MUST_START_WITH_PLUS, 5)
+    match_error('missing_braces2', xtn.XtnErrorCode.ARRAY_ELEMENT_MUST_START_WITH_PLUS, 6)
 
 def test_load_missing_brackets():
     match_error('missing_brackets', xtn.XtnErrorCode.PLUS_ENCOUNTERED_OUTSIDE_ARRAY, 2)
 
 def test_extra_close():
-    match_error('extra_close', xtn.XtnErrorCode.UNMATCHED_CLOSE_MARKER, 7)
+    match_error('extra_close', xtn.XtnErrorCode.UNMATCHED_CLOSE_MARKER, 9)
 
 def test_missing_close():
-    #with pytest.raises(xtn.XtnException):
-        match_error('missing_close', xtn.XtnErrorCode.MISSING_CLOSE_MARKER, 6)
+    match_error('missing_close', xtn.XtnErrorCode.MISSING_CLOSE_MARKER, 8)
+
+def test_missing_colon_in_arr_el():
+    match_error('missing_colon_arr_el', xtn.XtnErrorCode.MISSING_COLON, 5)
+
+def test_missing_colon_in_obj():
+    match_error('missing_colon_obj', xtn.XtnErrorCode.MISSING_COLON, 5)
+
+def test_complex_test_poor():
+    exact_match('complex_text_poor')
+
+def test_mixed_tabs_spaces1():
+    match_error('mixed_tabs_spaces1', xtn.XtnErrorCode.INDENTATION_MUST_NOT_BE_MIXED, 3)
+
+def test_mixed_tabs_spaces2():
+    match_error('mixed_tabs_spaces2', xtn.XtnErrorCode.INDENTATION_MUST_NOT_BE_MIXED, 3)
+    
+def test_mixed_tabs_spaces3():
+    match_error('mixed_tabs_spaces3', xtn.XtnErrorCode.INDENTATION_MUST_NOT_BE_MIXED, 4)
+    
+def test_mixed_tabs_spaces4():
+    match_error('mixed_tabs_spaces4', xtn.XtnErrorCode.INDENTATION_MUST_NOT_BE_MIXED, 5)
+    
+def test_insufficient_indentation1():
+    match_error('insufficient_indentation1', xtn.XtnErrorCode.INSUFFICIENT_INDENTATION, 5)
+
+def test_insufficient_indentation2():
+    match_error('insufficient_indentation2', xtn.XtnErrorCode.INSUFFICIENT_INDENTATION, 5)

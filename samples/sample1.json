@@ -9,6 +9,21 @@
         "key5": {
             "key6": "value6"
         },
-        "key7": "value7 a\nvalue7 b"
+        "key7": "value7 a\nvalue7 b",
+        "key8": [
+            {
+                "key9": "value91",
+                "key10": "value101"
+            },
+            {
+                "key9": "value92",
+                "key10": "value102"
+            },
+            [
+                "value111",
+                "value112",
+                "value113"
+            ]
+        ]
     }
 }
