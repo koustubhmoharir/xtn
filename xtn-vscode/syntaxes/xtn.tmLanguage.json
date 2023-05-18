@@ -1,0 +1,101 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "xtn",
+	"patterns": [
+		{
+			"include": "#pairs"
+		}
+	],
+	"repository": {
+		"pairs": {
+			"patterns": [
+				{
+					"include": "#comment"
+				},
+				{
+					"include": "#complex"
+				},
+				{
+					"include": "#block"
+				},
+				{
+					"include": "#pair"
+				}
+			]
+		},
+		"comment": {
+			"name": "comment.line.number-sign",
+			"match": "(\\s*#.*\\n)"
+		},
+		"pair": {
+			"name": "entity",
+			"match": "(?:(\\+)|([^-+{}\\[\\]:'\\s][^{}\\[\\]: ']*))\\s*[:]\\s*(.*)\\s*\\n",
+			"captures": {
+				"1": {
+					"name": "keyword"
+				},
+				"2": {
+					"name": "keyword"
+				},
+				"3": {
+					"name": "constant.other"
+				}
+			}
+		},
+		"block": {
+			"name": "entity",
+			"begin": "\\s*(?:(\\+)|([^-+{}\\[\\]:'\\s][^{}\\[\\]: ']*))\\s*(\\[\\]|\\{\\})\\s*([:])\\s*\\n",
+			"beginCaptures": {
+				"1": {
+					"name": "keyword"
+				},
+				"2": {
+					"name": "keyword"
+				},
+				"3": {
+					"name": "keyword"
+				},
+				"4": {
+					"name": "keyword.operator"
+				}
+			},
+			"end": "----",
+			"endCaptures": {
+				"0": {
+					"name": "keyword"
+				}
+			},
+			"patterns": [
+				{
+					"include": "#pairs"
+				}
+			]
+		},
+		"complex": {
+			"name": "entity",
+			"begin": "(\\s*)(?:(\\+)|([^-+{}\\[\\]:'\\s][^{}\\[\\]: ']*))\\s*('')\\s*([:])\\s*\\n",
+			"beginCaptures": {
+				"2": {
+					"name": "keyword"
+				},
+				"3": {
+					"name": "keyword"
+				},
+				"4": {
+					"name": "keyword"
+				},
+				"5": {
+					"name": "keyword.operator"
+				}
+			},
+			"end": "^\\1----\\s*\n",
+			"endCaptures": {
+				"0": {
+					"name": "keyword"
+				}
+			},
+			"contentName": "constant.other"
+		}
+	},
+	"scopeName": "source.xtn"
+}

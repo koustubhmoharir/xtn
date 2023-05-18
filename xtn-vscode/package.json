@@ -1,0 +1,26 @@
+{
+  "name": "xtn",
+  "publisher": "xtn-tools",
+  "displayName": "xtn",
+  "description": "Language Support for the XTN format",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.78.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "xtn",
+      "aliases": ["xtn", "xtn"],
+      "extensions": [".xtn"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "xtn",
+      "scopeName": "source.xtn",
+      "path": "./syntaxes/xtn.tmLanguage.json"
+    }]
+  }
+}
