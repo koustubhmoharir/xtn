@@ -15,7 +15,8 @@
             ],
             "autoAttachChildProcesses": true,
             "outFiles": [
-                "${workspaceRoot}/client/out/**/*.js"
+                "${workspaceRoot}/client/out/**/*.js",
+                "${workspaceRoot}/server/out/**/*.js"
             ],
             "preLaunchTask": {
                 "type": "npm",

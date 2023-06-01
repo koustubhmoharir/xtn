@@ -10,7 +10,8 @@ import {
     CompletionItemKind,
     TextDocumentPositionParams,
     TextDocumentSyncKind,
-    InitializeResult
+    InitializeResult,
+    FoldingRangeParams
 } from 'vscode-languageserver/node';
 
 import {
@@ -52,7 +53,8 @@ connection.onInitialize((params: InitializeParams) => {
             // Tell the client that this server supports code completion.
             completionProvider: {
                 resolveProvider: true
-            }
+            },
+            //foldingRangeProvider: true
         }
     };
     if (hasWorkspaceFolderCapability) {
@@ -90,6 +92,30 @@ let globalSettings: ExampleSettings = defaultSettings;
 
 // Cache the settings of all open documents
 const documentSettings: Map<string, Thenable<ExampleSettings>> = new Map();
+
+const parseCache: Map<string, { version: number; obj?: XtnObject; error?: XtnException }> = new Map();
+function getParsedDocument(uri: string, doc?: TextDocument) {
+    let entry = parseCache.get(uri);
+    if (!doc) return entry;
+    if (!entry || entry.version !== doc.version) {
+        let obj;
+        let error;
+        try {
+            obj = XtnObject.load(doc.getText());
+        }
+        catch (ex) {
+            if (ex instanceof XtnException)
+                error = ex;
+        }
+        entry = ({
+            version: doc.version,
+            obj,
+            error
+        });
+        parseCache.set(doc.uri, entry);
+    }
+    return entry;
+}
 
 connection.onDidChangeConfiguration(change => {
     if (hasConfigurationCapability) {
@@ -138,49 +164,46 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
     const settings = (await getDocumentSettings(textDocument.uri)) || globalSettings;
 
     // The validator creates diagnostics for all uppercase words length 2 and more
-    const text = textDocument.getText();
     const diagnostics: Diagnostic[] = [];
-    try {
-        XtnObject.load(text);
-    }
-    catch (err) {
-        if (err instanceof XtnException) {
-            const diagnostic: Diagnostic = {
-                severity: DiagnosticSeverity.Error,
-                range: {
-                    start: {
-                        line: err.line_no,
-                        character: 0
-                    },
-                    end: {
-                        line: err.line_no,
-                        character: 4
-                    }
+    const entry = getParsedDocument(textDocument.uri, textDocument);
+    const err = entry?.error;
+    if (err instanceof XtnException) {
+        const diagnostic: Diagnostic = {
+            severity: DiagnosticSeverity.Error,
+            range: {
+                start: {
+                    line: err.line_no,
+                    character: err.colStart
                 },
-                message: err.message,
-                source: 'xtn'
-            };
-            // if (hasDiagnosticRelatedInformationCapability) {
-            //     diagnostic.relatedInformation = [
-            //         {
-            //             location: {
-            //                 uri: textDocument.uri,
-            //                 range: Object.assign({}, diagnostic.range)
-            //             },
-            //             message: 'Spelling matters'
-            //         },
-            //         {
-            //             location: {
-            //                 uri: textDocument.uri,
-            //                 range: Object.assign({}, diagnostic.range)
-            //             },
-            //             message: 'Particularly for names'
-            //         }
-            //     ];
-            // }
-            diagnostics.push(diagnostic);    
-        }
+                end: {
+                    line: err.line_no,
+                    character: err.colEnd
+                }
+            },
+            message: err.message,
+            source: 'xtn'
+        };
+        // if (hasDiagnosticRelatedInformationCapability) {
+        //     diagnostic.relatedInformation = [
+        //         {
+        //             location: {
+        //                 uri: textDocument.uri,
+        //                 range: Object.assign({}, diagnostic.range)
+        //             },
+        //             message: 'Spelling matters'
+        //         },
+        //         {
+        //             location: {
+        //                 uri: textDocument.uri,
+        //                 range: Object.assign({}, diagnostic.range)
+        //             },
+        //             message: 'Particularly for names'
+        //         }
+        //     ];
+        // }
+        diagnostics.push(diagnostic);
     }
+    
 
     // Send the computed diagnostics to VSCode.
     connection.sendDiagnostics({ uri: textDocument.uri, diagnostics });
@@ -226,6 +249,22 @@ connection.onCompletionResolve(
         return item;
     }
 );
+
+// connection.onFoldingRanges((p: FoldingRangeParams) => {
+//     const entry = getParsedDocument(p.textDocument.uri);
+//     if (!entry || entry.error || !entry.obj) return null;
+//     return [{
+//         startLine: 2,
+//         endLine: 30
+//     }, {
+//             startLine: 4,
+//             endLine: 7
+//         }, {
+//             startLine: 8,
+//             endLine: 10
+//         }
+//     ]
+// })
 
 // Make the text document manager listen on the connection
 // for open, change and close text document events

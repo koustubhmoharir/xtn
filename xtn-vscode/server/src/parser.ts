@@ -11,18 +11,24 @@ export enum XtnErrorCode {
     INDENTATION_MUST_BE_SPACE_OR_TAB = 10,
     INDENTATION_MUST_NOT_BE_MIXED = 11,
     INSUFFICIENT_INDENTATION = 12,
+    ARRAY_ELEMENT_MUST_NOT_HAVE_A_KEY = 13,
+    OBJECT_KEYS_CANNOT_BE_REPEATED = 14,
 }
 
 export class XtnException extends Error {
     code: XtnErrorCode;
     message: string;
     line_no: number;
+    colStart: number;
+    colEnd: number;
 
-    constructor(code: XtnErrorCode, line_no: number, message: string) {
+    constructor(code: XtnErrorCode, line_no: number, colStart: number, colEnd: number, message: string) {
         super(message);
         this.code = code;
         this.message = message;
         this.line_no = line_no;
+        this.colStart = colStart;
+        this.colEnd = colEnd;
     }
 }
 
@@ -220,10 +226,14 @@ class _ObjectState {
         this.in_array = in_array;
     }
 
-    set(name: string, value: Record<string, any> | any[] | string, raise_error: (code: XtnErrorCode, msg: string) => never, convert_spaces: boolean = true) {
+    set(name: string, value: Record<string, any> | any[] | string, raise_key_error: (code: XtnErrorCode, msg: string, length: number) => never, convert_spaces: boolean = true) {
+        const len = name.length;
         name = _convert_spaces(name, true);
         if (convert_spaces && typeof value === 'string') {
             value = _convert_spaces(value, false);
+        }
+        if (name in this.current) {
+            raise_key_error(XtnErrorCode.OBJECT_KEYS_CANNOT_BE_REPEATED, `Object keys cannot be repeated. ${name} already exists.`, len);
         }
         if (this.target == null) {
             this.current[name] = value;
@@ -249,13 +259,16 @@ class _ArrayState {
         this.target = target;
     }
 
-    set(name: string, value: Record<string, any> | any[] | string, raise_error: (code: XtnErrorCode, msg: string) => never, convert_spaces: boolean = true) {
+    set(name: string, value: Record<string, any> | any[] | string, raise_error: (code: XtnErrorCode, msg: string, length: number) => never, convert_spaces: boolean = true) {
         name = _convert_spaces(name, true);
         if (convert_spaces && typeof value === 'string') {
             value = _convert_spaces(value, false);
         }
         if (name !== '+') {
-            raise_error(XtnErrorCode.ARRAY_ELEMENT_MUST_START_WITH_PLUS, 'An array element must start with a plus');
+            if (name.startsWith('+'))
+                raise_error(XtnErrorCode.ARRAY_ELEMENT_MUST_NOT_HAVE_A_KEY, 'An array element cannot be named', name.length);
+            else
+                raise_error(XtnErrorCode.ARRAY_ELEMENT_MUST_START_WITH_PLUS, 'An array element must start with a plus', name.length);
         }
         if (this.target === null) {
             this.current.push(value);
@@ -270,6 +283,7 @@ class _ArrayState {
 
 class _MultilineState {
     start_line: number;
+    startCol: number;
     name: string;
     parent_state: _ObjectState | _ArrayState;
     indent: string;
@@ -280,8 +294,9 @@ class _MultilineState {
     target: any = null;
     mode: 'MULTILINE' = 'MULTILINE';
 
-    constructor(start_line: number, name: string, parent_state: _ObjectState | _ArrayState, indent: string) {
+    constructor(start_line: number, startCol: number, name: string, parent_state: _ObjectState | _ArrayState, indent: string) {
         this.start_line = start_line;
+        this.startCol = startCol;
         this.name = name;
         this.parent_state = parent_state;
         this.indent = indent;
@@ -308,10 +323,6 @@ function _load(document: string, target: XtnObject | null): Record<string, any> 
     const stack: (_ObjectState | _ArrayState | _MultilineState)[] = [
         new _ObjectState(-1, top_level, target, false)
     ];
-
-    function raise_error(code: XtnErrorCode, msg: string): never {
-        throw new XtnException(code, i, msg);
-    }
 
     const comments: XtnComment[] | null = target != null ? [] : null;
 
@@ -350,7 +361,15 @@ function _load(document: string, target: XtnObject | null): Record<string, any> 
     }
 
     let i = -1;
-    for (const orig_line of breakIntoLines(document)) {
+    let orig_line: string;
+    let leftColStart: number;
+    function raise_error(code: XtnErrorCode, msg: string, colStart: number, colEnd: number): never {
+        throw new XtnException(code, i, colStart, colEnd, msg);
+    }
+    function raise_key_error(code: XtnErrorCode, msg: string, length: number): never {
+        throw new XtnException(code, i, leftColStart, leftColStart + length, msg);
+    }
+    for (orig_line of breakIntoLines(document)) {
         i++;
         let line: string = orig_line;
         const state = stack[stack.length - 1];
@@ -359,10 +378,12 @@ function _load(document: string, target: XtnObject | null): Record<string, any> 
                 if (state.indent.length > 0) {
                     state.indent_char = state.indent[0];
                     state.exp_indent = state.indent + state.indent_char.repeat(state.indent_char === '\t' ? 1 : 4);
-                } else if (line[0] === '\t') {
+                }
+                else if (line[0] === '\t') {
                     state.exp_indent = '\t';
                     state.indent_char = '\t';
-                } else {
+                }
+                else {
                     state.exp_indent = '    ';
                     state.indent_char = ' ';
                 }
@@ -376,7 +397,8 @@ function _load(document: string, target: XtnObject | null): Record<string, any> 
                 act_indent_len = act_indent.length;
                 prefix = prefix.substring(act_indent_len, act_indent_len + 1);
                 if (act_indent_len < cur_indent_len && isWhiteSpace(prefix) && prefix !== '\n' && prefix !== '\r') {
-                    raise_error(XtnErrorCode.INDENTATION_MUST_NOT_BE_MIXED, 'Indentation for a complex text value can use either spaces or tabs but not both');
+                    const colStart = orig_line.indexOf(prefix[0]);
+                    raise_error(XtnErrorCode.INDENTATION_MUST_NOT_BE_MIXED, 'Indentation for a complex text value can use either spaces or tabs but not both', colStart, colStart + 1);
                 }
                 line = line.substring(act_indent_len);
                 if (act_indent_len < cur_indent_len) {
@@ -384,16 +406,20 @@ function _load(document: string, target: XtnObject | null): Record<string, any> 
                 }
             }
             if (act_indent_len < state.exp_indent.length) {
-                const close_ind = line.substring(0, state.exp_indent.length - act_indent_len).indexOf('--');
+                const close_ind = line.substring(0, state.exp_indent.length - act_indent_len + 1).indexOf('--');
                 if (close_ind >= 0) {
                     const prefix = line.substring(0, close_ind);
                     if (prefix.length === 0 || prefix.trimStart().length === 0) {
                         if (line.substring(close_ind, close_ind + 4) === '----' && line.substring(close_ind + 4).trimEnd().length === 0) {
                             if (act_indent_len + close_ind <= state.indent.length) {
-                                if (state.indent.length > 0 && trimLeadingSpaceOrTab(prefix, state.indent_char).length !== 0) {
-                                    raise_error(XtnErrorCode.INDENTATION_MUST_NOT_BE_MIXED, 'Indentation for a complex text value can use either spaces or tabs but not both');
+                                const trimmedPrefix = trimLeadingSpaceOrTab(prefix, state.indent_char);
+                                if (state.indent.length > 0 && trimmedPrefix.length !== 0) {
+                                    const colStart = orig_line.indexOf(trimmedPrefix[0]);
+                                    let colEnd = orig_line.lastIndexOf(state.indent_char, orig_line.indexOf('-') - 1);
+                                    if (colEnd < colStart) colEnd = orig_line.indexOf('-'); 
+                                    raise_error(XtnErrorCode.INDENTATION_MUST_NOT_BE_MIXED, 'Indentation for a complex text value can use either spaces or tabs but not both', colStart, colEnd);
                                 }
-                                const child_target = state.parent_state.set(state.name, trimEndOfLine(state.text), raise_error, false);
+                                const child_target = state.parent_state.set(state.name, trimEndOfLine(state.text), raise_key_error, false);
                                 if (child_target != null) {
                                     (child_target as XtnText).force_multiline = true;
                                     attach_comments(child_target);
@@ -401,8 +427,8 @@ function _load(document: string, target: XtnObject | null): Record<string, any> 
                                 stack.pop();
                                 continue;
                             }
-                            raise_error(XtnErrorCode.INSUFFICIENT_INDENTATION, 'Lines starting with two or more dashes must be indented by at least 4 spaces or a tab compared to the key line');
                         }
+                        raise_error(XtnErrorCode.INSUFFICIENT_INDENTATION, 'Lines starting with two or more dashes must be indented by at least 4 spaces or a tab compared to the key line', 0, orig_line.indexOf('-'));
                     }
                 }
             }
@@ -423,49 +449,61 @@ function _load(document: string, target: XtnObject | null): Record<string, any> 
             right = right.trimStart();
             if (sep === ':') {
                 if (left.length === 0) {
-                    raise_error(XtnErrorCode.LINE_MUST_NOT_START_WITH_COLON, 'A line cannot start with a colon');
+                    const colStart = orig_line.indexOf(':');
+                    raise_error(XtnErrorCode.LINE_MUST_NOT_START_WITH_COLON, 'A line cannot start with a colon', colStart, colStart + 1);
                 }
-                else if (left.startsWith('+') && state.mode === 'OBJECT' && !state.in_array) {
-                    raise_error(XtnErrorCode.PLUS_ENCOUNTERED_OUTSIDE_ARRAY, 'A line cannot start with a plus outside the context of an array');
+                leftColStart = orig_line.indexOf(left[0]);
+                if (left.startsWith('+') && state.mode === 'OBJECT') {
+                    raise_error(XtnErrorCode.PLUS_ENCOUNTERED_OUTSIDE_ARRAY, 'A line cannot start with a plus outside the context of an array', leftColStart, leftColStart + 1);
                 }
 
                 if (left.endsWith('{}')) {
                     if (right.length > 0) {
-                        raise_error(XtnErrorCode.OBJECT_MUST_BE_ON_NEW_LINE, 'An object must start on a new line');
+                        const colEnd = orig_line.lastIndexOf(right[right.length - 1]) + 1;
+                        raise_error(XtnErrorCode.OBJECT_MUST_BE_ON_NEW_LINE, 'An object must start on a new line', colEnd - right.length, colEnd);
                     }
                     const name = left.substring(0, left.length -2).trimEnd();
                     const obj: Record<string, any> = {};
-                    const child_target = state.set(name, obj, raise_error);
+                    const child_target = state.set(name, obj, raise_key_error);
                     attach_comments(child_target);
                     stack.push(new _ObjectState(i, obj, child_target as XtnObject, state.mode === 'ARRAY'));
-                } else if (left.endsWith('[]')) {
+                }
+                else if (left.endsWith('[]')) {
                     if (right.length > 0) {
-                        raise_error(XtnErrorCode.ARRAY_MUST_BE_ON_NEW_LINE, 'An array must start on a new line');
+                        const colEnd = orig_line.lastIndexOf(right[right.length - 1]) + 1;
+                        raise_error(XtnErrorCode.ARRAY_MUST_BE_ON_NEW_LINE, 'An array must start on a new line', colEnd - right.length, colEnd);
                     }
                     const name = left.substring(0, left.length -2).trimEnd();
                     const obj: any[] = [];
-                    const child_target = state.set(name, obj, raise_error);
+                    const child_target = state.set(name, obj, raise_key_error);
                     attach_comments(child_target);
                     stack.push(new _ArrayState(i, obj, child_target as XtnArray));
-                } else if (left.endsWith("''")) {
+                }
+                else if (left.endsWith("''")) {
                     const indent = orig_line.substring(0, orig_line.indexOf(left[0]));
                     if (indent.length > 0) {
                         const indent_char = indent[0];
                         if (indent_char != ' ' && indent_char != '\t') {
-                            raise_error(XtnErrorCode.INDENTATION_MUST_BE_SPACE_OR_TAB, 'Indentation for a complex text value must be a space (32) or tab (9) character');
+                            const colStart = orig_line.indexOf(indent_char);
+                            raise_error(XtnErrorCode.INDENTATION_MUST_BE_SPACE_OR_TAB, 'Indentation for a complex text value must be a space (32) or tab (9) character', colStart, colStart + 1);
                         }
-                        if (trimLeadingSpaceOrTab(indent, indent_char).length > 0) {
-                            raise_error(XtnErrorCode.INDENTATION_MUST_NOT_BE_MIXED, 'Indentation for a complex text value can use either spaces or tabs but not both');
+                        const trimmedIndent = trimLeadingSpaceOrTab(indent, indent_char);
+                        if (trimmedIndent.length > 0) {
+                            const colStart = orig_line.indexOf(trimmedIndent[0]);
+                            let colEnd = indent.lastIndexOf(indent_char);
+                            if (colEnd < colStart) colEnd = indent.length;
+                            raise_error(XtnErrorCode.INDENTATION_MUST_NOT_BE_MIXED, 'Indentation for a complex text value can use either spaces or tabs but not both', colStart, colEnd);
                         }
                     }
                     const name = left.slice(0, left.length - 2).trimEnd();
                     if (right.length > 0) {
-                        raise_error(XtnErrorCode.MULTILINE_MUST_BE_ON_NEW_LINE, 'A multiline value must start on a new line');
+                        const colEnd = orig_line.lastIndexOf(right[right.length - 1]) + 1;
+                        raise_error(XtnErrorCode.MULTILINE_MUST_BE_ON_NEW_LINE, 'A multiline value must start on a new line', colEnd - right.length, colEnd);
                     }
-                    stack.push(new _MultilineState(i, name, state, indent));
+                    stack.push(new _MultilineState(i, orig_line.indexOf(left[0]), name, state, indent));
                 }
                 else {
-                    const child_target = state.set(left, right, raise_error);
+                    const child_target = state.set(left, right, raise_key_error);
                     attach_comments(child_target);
                 }
             }
@@ -473,17 +511,29 @@ function _load(document: string, target: XtnObject | null): Record<string, any> 
                 attach_trailing_comments(stack[stack.length - 1].target);
                 stack.pop();
                 if (stack.length === 0) {
-                    raise_error(XtnErrorCode.UNMATCHED_CLOSE_MARKER, 'The close marker ---- does not match any open object or array');
+                    const colStart = orig_line.indexOf('-');
+                    raise_error(XtnErrorCode.UNMATCHED_CLOSE_MARKER, 'The close marker ---- does not match any open object or array', colStart, colStart + 4);
                 }
             }
             else {
-                raise_error(XtnErrorCode.MISSING_COLON, 'A colon was expected');
+                const colStart = orig_line.indexOf(left[0]);
+                if (state.mode === 'ARRAY') {
+                    if (left[0] === '+') {
+                        raise_error(XtnErrorCode.MISSING_COLON, 'A colon was expected', colStart + 1, colStart + 2);
+                    }
+                    else {
+                        raise_error(XtnErrorCode.ARRAY_ELEMENT_MUST_START_WITH_PLUS, 'An array element must start with a plus', colStart, colStart + left.length);
+                    }
+                }
+                else {
+                    raise_error(XtnErrorCode.MISSING_COLON, 'A colon was expected', colStart, colStart + left.length);
+                }
             }
         }
     }
     i += 1;
     if (stack.length > 1) {
-        raise_error(XtnErrorCode.MISSING_CLOSE_MARKER, 'A close marker ---- was expected');
+        raise_error(XtnErrorCode.MISSING_CLOSE_MARKER, 'A close marker ---- was expected', 0, 1);
     }
     return top_level;
 }

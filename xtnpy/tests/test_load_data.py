@@ -72,3 +72,15 @@ def test_insufficient_indentation1():
 
 def test_insufficient_indentation2():
     match_error('insufficient_indentation2', xtn.XtnErrorCode.INSUFFICIENT_INDENTATION, 5)
+
+def test_insufficient_indentation3():
+    match_error('insufficient_indentation3', xtn.XtnErrorCode.INSUFFICIENT_INDENTATION, 5)
+
+def test_bad_key_in_obj1():
+    match_error('bad_key_in_obj1', xtn.XtnErrorCode.PLUS_ENCOUNTERED_OUTSIDE_ARRAY, 4)
+
+def test_bad_key_in_arr1():
+    match_error('bad_key_in_arr1', xtn.XtnErrorCode.ARRAY_ELEMENT_MUST_NOT_HAVE_A_KEY, 5)
+
+def test_repeated_key_in_obj1():
+    match_error('repeated_key_in_obj1', xtn.XtnErrorCode.OBJECT_KEYS_CANNOT_BE_REPEATED, 4)

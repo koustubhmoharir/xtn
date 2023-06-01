@@ -17,6 +17,8 @@ class XtnErrorCode(Enum):
     INDENTATION_MUST_BE_SPACE_OR_TAB = 10
     INDENTATION_MUST_NOT_BE_MIXED = 11
     INSUFFICIENT_INDENTATION = 12
+    ARRAY_ELEMENT_MUST_NOT_HAVE_A_KEY = 13
+    OBJECT_KEYS_CANNOT_BE_REPEATED = 14
 
 
 class XtnException(Exception):
@@ -159,6 +161,8 @@ class _ObjectState:
         name = _convert_spaces(name, True)
         if convert_spaces and isinstance(value, str):
             value = _convert_spaces(value, False)
+        if name in self.current:
+            raise_error(XtnErrorCode.OBJECT_KEYS_CANNOT_BE_REPEATED, f"Object keys cannot be repeated. {name} already exists.")
         if self.target is None:
             self.current[name] = value
             return None
@@ -180,8 +184,12 @@ class _ArrayState:
         if convert_spaces and isinstance(value, str):
             value = _convert_spaces(value, False)
         if name != '+':
-            raise_error(XtnErrorCode.ARRAY_ELEMENT_MUST_START_WITH_PLUS,
-                        "An array element must start with a plus")
+            if name.startswith('+'):
+                raise_error(XtnErrorCode.ARRAY_ELEMENT_MUST_NOT_HAVE_A_KEY,
+                            "An array element cannot be named")
+            else:
+                raise_error(XtnErrorCode.ARRAY_ELEMENT_MUST_START_WITH_PLUS,
+                            "An array element must start with a plus")
         if self.target is None:
             self.current.append(value)
             return None
@@ -248,7 +256,8 @@ def _load(f: TextIO, target: XtnObject | None) -> dict[str, Any]:
                 if len(state.indent) > 0:
                     state.indent_char = state.indent[0]
                     state.exp_indent = state.indent + \
-                        state.indent_char * (1 if state.indent_char == '\t' else 4)
+                        state.indent_char * \
+                        (1 if state.indent_char == '\t' else 4)
                 elif line[:1] == '\t':
                     state.exp_indent = '\t'
                     state.indent_char = '\t'
@@ -271,24 +280,28 @@ def _load(f: TextIO, target: XtnObject | None) -> dict[str, Any]:
                 if act_indent_len < cur_indent_len:
                     state.cur_indent = act_indent
             if act_indent_len < len(state.exp_indent):
-                close_ind = line.find('--', None, len(state.exp_indent) - act_indent_len)
+                close_ind = line.find(
+                    '--', None, len(state.exp_indent) - act_indent_len + 1)
                 if close_ind >= 0:
                     prefix = line[:close_ind]
                     if len(prefix) == 0 or prefix.isspace():
                         if line[close_ind:(close_ind+4)] == '----' and (len(line) == close_ind + 4 or line[(close_ind+4):].isspace()):
                             if act_indent_len + close_ind <= len(state.indent):
                                 if len(state.indent) > 0 and len(prefix.lstrip(state.indent_char)) != 0:
-                                    raise_error(XtnErrorCode.INDENTATION_MUST_NOT_BE_MIXED, f"Indentation for a complex text value can use either spaces or tabs but not both")
-                                
-                                child_target = state.parent_state.set(state.name, state.text[0:-1], raise_error, convert_spaces=False)
+                                    raise_error(XtnErrorCode.INDENTATION_MUST_NOT_BE_MIXED,
+                                                f"Indentation for a complex text value can use either spaces or tabs but not both")
+
+                                child_target = state.parent_state.set(
+                                    state.name, state.text[0:-1], raise_error, convert_spaces=False)
                                 if child_target is not None:
                                     child_target.force_multiline = True  # type: ignore
                                     attach_comments(child_target)
                                 stack.pop()
                                 continue
-                            
-                        raise_error(XtnErrorCode.INSUFFICIENT_INDENTATION, f"Lines starting with two or more dashes must be indented by at least 4 spaces or a tab compared to the key line")
-            
+
+                        raise_error(XtnErrorCode.INSUFFICIENT_INDENTATION,
+                                    f"Lines starting with two or more dashes must be indented by at least 4 spaces or a tab compared to the key line")
+
             state.text = state.text + line
         else:
             line = line.strip()
@@ -305,7 +318,7 @@ def _load(f: TextIO, target: XtnObject | None) -> dict[str, Any]:
                 if len(left) == 0:
                     raise_error(XtnErrorCode.LINE_MUST_NOT_START_WITH_COLON,
                                 f"A line cannot start with a colon")
-                elif left.startswith('+') and state.mode == _Mode.OBJECT and not state.in_array:
+                elif left.startswith('+') and state.mode == _Mode.OBJECT:
                     raise_error(XtnErrorCode.PLUS_ENCOUNTERED_OUTSIDE_ARRAY,
                                 f"A line cannot start with a plus outside the context of an array")
 
@@ -358,8 +371,16 @@ def _load(f: TextIO, target: XtnObject | None) -> dict[str, Any]:
                     raise_error(XtnErrorCode.UNMATCHED_CLOSE_MARKER,
                                 "The close marker ---- does not match any open object or array")
             else:
-                raise_error(XtnErrorCode.MISSING_COLON,
-                            f"A colon was expected")
+                if state.mode == _Mode.ARRAY:
+                    if left[0] == '+':
+                        raise_error(XtnErrorCode.MISSING_COLON,
+                                    f"A colon was expected")
+                    else:
+                        raise_error(XtnErrorCode.ARRAY_ELEMENT_MUST_START_WITH_PLUS,
+                                    f"An array element must start with a plus")
+                else:
+                    raise_error(XtnErrorCode.MISSING_COLON,
+                                f"A colon was expected")
 
     i += 1
     if len(stack) > 1:
