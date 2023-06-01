@@ -1,12 +1,17 @@
 {
   "name": "xtn",
   "publisher": "xtn-tools",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/koustubhmoharir/xtn"
+  },
   "displayName": "xtn",
   "description": "Language Support for the XTN format",
   "version": "0.0.1",
   "engines": {
-    "vscode": "^1.78.0"
+    "vscode": "^1.75.0"
   },
+  "main": "./client/out/extension",
   "categories": [
     "Programming Languages"
   ],
@@ -22,5 +27,22 @@
       "scopeName": "source.xtn",
       "path": "./syntaxes/xtn.tmLanguage.json"
     }]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -b",
+    "watch": "tsc -b -w",
+    "lint": "eslint ./client/src ./server/src --ext .ts,.tsx",
+    "postinstall": "cd client && npm install && cd ../server && npm install && cd ..",
+    "test": "sh ./scripts/e2e.sh"
+  },
+  "devDependencies": {
+    "@types/mocha": "^9.1.0",
+    "@types/node": "^16.11.7",
+    "@typescript-eslint/eslint-plugin": "^5.54.0",
+    "@typescript-eslint/parser": "^5.54.0",
+    "eslint": "^8.35.0",
+    "mocha": "^9.2.1",
+    "typescript": "^5.0.2"
   }
 }

@@ -1,0 +1,23 @@
+{
+    "name": "xtn-client",
+    "description": "VSCode part of the language server for XTN",
+    "author": "Koustubh Moharir",
+    "license": "MIT",
+    "version": "0.0.1",
+    "publisher": "xtn-tools",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/koustubhmoharir/xtn"
+    },
+    "engines": {
+        "vscode": "^1.75.0"
+    },
+    "dependencies": {
+        "vscode-languageclient": "^8.1.0"
+    },
+    "devDependencies": {
+        "@types/node": "^20.2.5",
+        "@types/vscode": "^1.75.1",
+        "@vscode/test-electron": "^2.2.3"
+    }
+}

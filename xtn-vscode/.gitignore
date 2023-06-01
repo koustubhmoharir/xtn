@@ -1,6 +1,11 @@
 # Coverage reports
 coverage
 
+# Output
+/client/out
+/server/out
+*.vsix
+
 # Dependency directory
 node_modules
 

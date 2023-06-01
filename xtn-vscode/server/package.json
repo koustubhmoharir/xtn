@@ -1,0 +1,19 @@
+{
+    "name": "xtn-server",
+    "description": "Implementation of a language server for XTN.",
+    "version": "0.0.1",
+    "author": "Koustubh Moharir",
+    "license": "MIT",
+    "engines": {
+        "node": "*"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/koustubhmoharir/xtn"
+    },
+    "dependencies": {
+        "vscode-languageserver": "^8.1.0",
+        "vscode-languageserver-textdocument": "^1.0.8"
+    },
+    "scripts": {}
+}
