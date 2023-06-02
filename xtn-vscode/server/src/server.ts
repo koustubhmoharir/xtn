@@ -11,13 +11,14 @@ import {
     TextDocumentPositionParams,
     TextDocumentSyncKind,
     InitializeResult,
-    FoldingRangeParams
+    FoldingRangeParams,
+    FoldingRange
 } from 'vscode-languageserver/node';
 
 import {
     TextDocument
 } from 'vscode-languageserver-textdocument';
-import { XtnException, XtnObject } from './parser';
+import { XtnArray, XtnElement, XtnException, XtnObject } from './parser';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -54,7 +55,7 @@ connection.onInitialize((params: InitializeParams) => {
             completionProvider: {
                 resolveProvider: true
             },
-            //foldingRangeProvider: true
+            foldingRangeProvider: true
         }
     };
     if (hasWorkspaceFolderCapability) {
@@ -250,21 +251,33 @@ connection.onCompletionResolve(
     }
 );
 
-// connection.onFoldingRanges((p: FoldingRangeParams) => {
-//     const entry = getParsedDocument(p.textDocument.uri);
-//     if (!entry || entry.error || !entry.obj) return null;
-//     return [{
-//         startLine: 2,
-//         endLine: 30
-//     }, {
-//             startLine: 4,
-//             endLine: 7
-//         }, {
-//             startLine: 8,
-//             endLine: 10
-//         }
-//     ]
-// })
+function appendFoldingRanges(el: XtnElement, ranges: FoldingRange[]) {
+    if (el.lineNo != null && el.endLineNo != null) {
+        ranges.push({
+            startLine: el.lineNo,
+            endLine: el.endLineNo
+        });
+    }
+    if (el instanceof XtnObject) {
+        for (const key in el.elements) {
+            appendFoldingRanges(el.elements[key], ranges);
+        }
+    }
+    else if (el instanceof XtnArray) {
+        for (const ch of el.elements) {
+            appendFoldingRanges(ch, ranges);
+        }
+    }
+}
+
+connection.onFoldingRanges((p: FoldingRangeParams) => {
+    const entry = getParsedDocument(p.textDocument.uri);
+    if (!entry || entry.error || !entry.obj) return null;
+
+    let ranges: FoldingRange[] = [];
+    appendFoldingRanges(entry.obj, ranges);
+    return ranges;
+})
 
 // Make the text document manager listen on the connection
 // for open, change and close text document events

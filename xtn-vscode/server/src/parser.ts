@@ -41,7 +41,14 @@ enum _Mode {
 
 type XtnValue = string | XtnValue[] | { [key: string]: XtnValue };
 
-export abstract class XtnElement { }
+export abstract class XtnElement {
+    lineNo: number | null;
+    endLineNo: number | null;
+    constructor() {
+        this.lineNo = null;
+        this.endLineNo = null;
+    }
+}
 
 export class XtnComment extends XtnElement {
     value: string;
@@ -326,26 +333,6 @@ function _load(document: string, target: XtnObject | null): Record<string, any> 
 
     const comments: XtnComment[] | null = target != null ? [] : null;
 
-    function record_comment(line: string): void {
-        if (comments !== null) {
-            if (line.length === 0) {
-                comments.push(new XtnComment(''));
-            } else {
-                let value = line.replace(/^#*/, '');
-                const prefix = '#'.repeat(line.length - value.length - 1);
-                if (isWhiteSpace(value.substring(0, 1))) {
-                    value = value.substring(1);
-                }
-                if (isWhiteSpace(value)) {
-                    comments.push(new XtnComment(''));
-                }
-                else {
-                    comments.push(new XtnComment(value, prefix));
-                }
-            }
-        }
-    }
-
     function attach_comments(target: XtnDataElement | null): void {
         if (target != null && comments?.length) {
             target.comments = comments.slice();
@@ -363,6 +350,28 @@ function _load(document: string, target: XtnObject | null): Record<string, any> 
     let i = -1;
     let orig_line: string;
     let leftColStart: number;
+
+    function record_comment(line: string): void {
+        if (comments !== null) {
+            if (line.length === 0) {
+                comments.push(new XtnComment(''));
+            }
+            else {
+                let value = line.replace(/^#*/, '');
+                const prefix = '#'.repeat(line.length - value.length - 1);
+                if (isWhiteSpace(value.substring(0, 1))) {
+                    value = value.substring(1);
+                }
+                if (isWhiteSpace(value)) {
+                    comments.push(new XtnComment(''));
+                }
+                else {
+                    comments.push(new XtnComment(value, prefix));
+                }
+            }
+            comments[comments.length - 1].lineNo = i;
+        }
+    }
     function raise_error(code: XtnErrorCode, msg: string, colStart: number, colEnd: number): never {
         throw new XtnException(code, i, colStart, colEnd, msg);
     }
@@ -405,6 +414,8 @@ function _load(document: string, target: XtnObject | null): Record<string, any> 
                     if (act_indent_len == state.indent.length) {
                         const child_target = state.parent_state.set(state.name, trimEndOfLine(state.text), raise_key_error, false);
                         if (child_target != null) {
+                            child_target.lineNo = state.start_line;
+                            child_target.endLineNo = i;
                             (child_target as XtnText).force_multiline = true;
                             attach_comments(child_target);
                         }
@@ -450,6 +461,7 @@ function _load(document: string, target: XtnObject | null): Record<string, any> 
                     const name = left.substring(0, left.length -2).trimEnd();
                     const obj: Record<string, any> = {};
                     const child_target = state.set(name, obj, raise_key_error);
+                    if (child_target) child_target.lineNo = i;
                     attach_comments(child_target);
                     stack.push(new _ObjectState(i, obj, child_target as XtnObject, state.mode === 'ARRAY'));
                 }
@@ -461,6 +473,7 @@ function _load(document: string, target: XtnObject | null): Record<string, any> 
                     const name = left.substring(0, left.length -2).trimEnd();
                     const obj: any[] = [];
                     const child_target = state.set(name, obj, raise_key_error);
+                    if (child_target) child_target.lineNo = i;
                     attach_comments(child_target);
                     stack.push(new _ArrayState(i, obj, child_target as XtnArray));
                 }
@@ -493,7 +506,11 @@ function _load(document: string, target: XtnObject | null): Record<string, any> 
                 }
             }
             else if (left.startsWith('----') && left.substring(4).trimEnd().length === 0) {
-                attach_trailing_comments(stack[stack.length - 1].target);
+                const target = stack[stack.length - 1].target;
+                if (target) {
+                    target.endLineNo = i;
+                    attach_trailing_comments(target);
+                }
                 stack.pop();
                 if (stack.length === 0) {
                     const colStart = orig_line.indexOf('-');
