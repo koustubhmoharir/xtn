@@ -13,6 +13,7 @@ export enum XtnErrorCode {
     INSUFFICIENT_INDENTATION = 12,
     ARRAY_ELEMENT_MUST_NOT_HAVE_A_KEY = 13,
     OBJECT_KEYS_CANNOT_BE_REPEATED = 14,
+    INCORRECT_INDENTATION = 15,
 }
 
 export class XtnException extends Error {
@@ -289,7 +290,6 @@ class _MultilineState {
     indent: string;
     indent_char: string = ' ';
     exp_indent: string | null = null;
-    cur_indent: string = '';
     text: string = '';
     target: any = null;
     mode: 'MULTILINE' = 'MULTILINE';
@@ -387,49 +387,34 @@ function _load(document: string, target: XtnObject | null): Record<string, any> 
                     state.exp_indent = '    ';
                     state.indent_char = ' ';
                 }
-                state.cur_indent = state.exp_indent;
             }
-            const cur_indent_len = state.cur_indent.length;
+            const exp_indent_len = state.exp_indent.length;
             let act_indent_len = 0;
-            if (cur_indent_len > 0) {
-                let prefix = line.substring(0, cur_indent_len);
-                const act_indent = prefix.substring(0, prefix.length - trimLeadingSpaceOrTab(prefix, state.indent_char).length);
-                act_indent_len = act_indent.length;
-                prefix = prefix.substring(act_indent_len, act_indent_len + 1);
-                if (act_indent_len < cur_indent_len && isWhiteSpace(prefix) && prefix !== '\n' && prefix !== '\r') {
-                    const colStart = orig_line.indexOf(prefix[0]);
-                    raise_error(XtnErrorCode.INDENTATION_MUST_NOT_BE_MIXED, 'Indentation for a complex text value can use either spaces or tabs but not both', colStart, colStart + 1);
-                }
-                line = line.substring(act_indent_len);
-                if (act_indent_len < cur_indent_len) {
-                    state.cur_indent = act_indent;
-                }
+            
+            let prefix = line.substring(0, exp_indent_len);
+            const act_indent = prefix.substring(0, prefix.length - trimLeadingSpaceOrTab(prefix, state.indent_char).length);
+            act_indent_len = act_indent.length;
+            prefix = prefix.substring(act_indent_len, act_indent_len + 1);
+            if (act_indent_len < exp_indent_len && isWhiteSpace(prefix) && prefix !== '\n' && prefix !== '\r') {
+                const colStart = orig_line.indexOf(prefix[0]);
+                raise_error(XtnErrorCode.INDENTATION_MUST_NOT_BE_MIXED, 'Indentation for a complex text value can use either spaces or tabs but not both', colStart, colStart + 1);
             }
-            if (act_indent_len < state.exp_indent.length) {
-                const close_ind = line.substring(0, state.exp_indent.length - act_indent_len + 1).indexOf('--');
-                if (close_ind >= 0) {
-                    const prefix = line.substring(0, close_ind);
-                    if (prefix.length === 0 || prefix.trimStart().length === 0) {
-                        if (line.substring(close_ind, close_ind + 4) === '----' && line.substring(close_ind + 4).trimEnd().length === 0) {
-                            if (act_indent_len + close_ind <= state.indent.length) {
-                                const trimmedPrefix = trimLeadingSpaceOrTab(prefix, state.indent_char);
-                                if (state.indent.length > 0 && trimmedPrefix.length !== 0) {
-                                    const colStart = orig_line.indexOf(trimmedPrefix[0]);
-                                    let colEnd = orig_line.lastIndexOf(state.indent_char, orig_line.indexOf('-') - 1);
-                                    if (colEnd < colStart) colEnd = orig_line.indexOf('-'); 
-                                    raise_error(XtnErrorCode.INDENTATION_MUST_NOT_BE_MIXED, 'Indentation for a complex text value can use either spaces or tabs but not both', colStart, colEnd);
-                                }
-                                const child_target = state.parent_state.set(state.name, trimEndOfLine(state.text), raise_key_error, false);
-                                if (child_target != null) {
-                                    (child_target as XtnText).force_multiline = true;
-                                    attach_comments(child_target);
-                                }
-                                stack.pop();
-                                continue;
-                            }
+            line = line.substring(act_indent_len);
+            if (act_indent_len < exp_indent_len) {
+                if (line.startsWith('----') && line.substring(4).trimEnd().length === 0) {
+                    if (act_indent_len == state.indent.length) {
+                        const child_target = state.parent_state.set(state.name, trimEndOfLine(state.text), raise_key_error, false);
+                        if (child_target != null) {
+                            (child_target as XtnText).force_multiline = true;
+                            attach_comments(child_target);
                         }
-                        raise_error(XtnErrorCode.INSUFFICIENT_INDENTATION, 'Lines starting with two or more dashes must be indented by at least 4 spaces or a tab compared to the key line', 0, orig_line.indexOf('-'));
+                        stack.pop();
+                        continue;
                     }
+                    raise_error(XtnErrorCode.INCORRECT_INDENTATION, 'The indentation on the closing line for a complex text value must exactly match the key line', 0, orig_line.indexOf('-'));
+                }
+                if (prefix !== '\n' && prefix !== '\r') {
+                    raise_error(XtnErrorCode.INSUFFICIENT_INDENTATION, 'Lines of complex text must be indented by 4 spaces or a tab compared to the key line', 0, act_indent_len);
                 }
             }
             state.text += line;

@@ -52,8 +52,8 @@ def test_missing_colon_in_arr_el():
 def test_missing_colon_in_obj():
     match_error('missing_colon_obj', xtn.XtnErrorCode.MISSING_COLON, 5)
 
-def test_complex_test_poor():
-    exact_match('complex_text_poor')
+def test_complex_test():
+    exact_match('complex_text')
 
 def test_mixed_tabs_spaces1():
     match_error('mixed_tabs_spaces1', xtn.XtnErrorCode.INDENTATION_MUST_NOT_BE_MIXED, 3)

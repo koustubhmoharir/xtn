@@ -19,6 +19,7 @@ class XtnErrorCode(Enum):
     INSUFFICIENT_INDENTATION = 12
     ARRAY_ELEMENT_MUST_NOT_HAVE_A_KEY = 13
     OBJECT_KEYS_CANNOT_BE_REPEATED = 14
+    INCORRECT_INDENTATION = 15
 
 
 class XtnException(Exception):
@@ -162,7 +163,8 @@ class _ObjectState:
         if convert_spaces and isinstance(value, str):
             value = _convert_spaces(value, False)
         if name in self.current:
-            raise_error(XtnErrorCode.OBJECT_KEYS_CANNOT_BE_REPEATED, f"Object keys cannot be repeated. {name} already exists.")
+            raise_error(XtnErrorCode.OBJECT_KEYS_CANNOT_BE_REPEATED,
+                        f"Object keys cannot be repeated. {name} already exists.")
         if self.target is None:
             self.current[name] = value
             return None
@@ -207,7 +209,6 @@ class _MultilineState:
     indent: str
     indent_char: str = ' '
     exp_indent: str | None = None
-    cur_indent: str = ''
     text: str = ''
     target = None
     mode: Literal[_Mode.MULTILINE] = _Mode.MULTILINE
@@ -255,8 +256,7 @@ def _load(f: TextIO, target: XtnObject | None) -> dict[str, Any]:
             if state.exp_indent is None:
                 if len(state.indent) > 0:
                     state.indent_char = state.indent[0]
-                    state.exp_indent = state.indent + \
-                        state.indent_char * \
+                    state.exp_indent = state.indent + state.indent_char * \
                         (1 if state.indent_char == '\t' else 4)
                 elif line[:1] == '\t':
                     state.exp_indent = '\t'
@@ -264,43 +264,32 @@ def _load(f: TextIO, target: XtnObject | None) -> dict[str, Any]:
                 else:
                     state.exp_indent = '    '
                     state.indent_char = ' '
-                state.cur_indent = state.exp_indent
-            cur_indent_len = len(state.cur_indent)
+            exp_indent_len = len(state.exp_indent)
             act_indent_len = 0
-            if cur_indent_len > 0:
-                prefix = line[0:cur_indent_len]
-                act_indent = prefix[:(
-                    len(prefix) - len(prefix.lstrip(state.exp_indent[0])))]
-                act_indent_len = len(act_indent)
-                prefix = prefix[act_indent_len:act_indent_len+1]
-                if act_indent_len < cur_indent_len and prefix.isspace() and prefix != '\n':
-                    raise_error(XtnErrorCode.INDENTATION_MUST_NOT_BE_MIXED,
-                                f"Indentation for a complex text value can use either spaces or tabs but not both")
-                line = line[act_indent_len:]
-                if act_indent_len < cur_indent_len:
-                    state.cur_indent = act_indent
-            if act_indent_len < len(state.exp_indent):
-                close_ind = line.find(
-                    '--', None, len(state.exp_indent) - act_indent_len + 1)
-                if close_ind >= 0:
-                    prefix = line[:close_ind]
-                    if len(prefix) == 0 or prefix.isspace():
-                        if line[close_ind:(close_ind+4)] == '----' and (len(line) == close_ind + 4 or line[(close_ind+4):].isspace()):
-                            if act_indent_len + close_ind <= len(state.indent):
-                                if len(state.indent) > 0 and len(prefix.lstrip(state.indent_char)) != 0:
-                                    raise_error(XtnErrorCode.INDENTATION_MUST_NOT_BE_MIXED,
-                                                f"Indentation for a complex text value can use either spaces or tabs but not both")
-
-                                child_target = state.parent_state.set(
-                                    state.name, state.text[0:-1], raise_error, convert_spaces=False)
-                                if child_target is not None:
-                                    child_target.force_multiline = True  # type: ignore
-                                    attach_comments(child_target)
-                                stack.pop()
-                                continue
-
-                        raise_error(XtnErrorCode.INSUFFICIENT_INDENTATION,
-                                    f"Lines starting with two or more dashes must be indented by at least 4 spaces or a tab compared to the key line")
+            prefix = line[0:exp_indent_len]
+            act_indent = prefix[:(
+                len(prefix) - len(prefix.lstrip(state.indent_char)))]
+            act_indent_len = len(act_indent)
+            prefix = prefix[act_indent_len:act_indent_len+1]
+            if act_indent_len < exp_indent_len and prefix.isspace() and prefix != '\n':
+                raise_error(XtnErrorCode.INDENTATION_MUST_NOT_BE_MIXED,
+                            f"Indentation for a complex text value can use either spaces or tabs but not both")
+            line = line[act_indent_len:]
+            if act_indent_len < exp_indent_len:
+                if line.startswith('----') and (len(line) == 4 or line[4:].isspace()):
+                    if act_indent_len == len(state.indent):
+                        child_target = state.parent_state.set(
+                            state.name, state.text[0:-1], raise_error, convert_spaces=False)
+                        if child_target is not None:
+                            child_target.force_multiline = True  # type: ignore
+                            attach_comments(child_target)
+                        stack.pop()
+                        continue
+                    raise_error(XtnErrorCode.INCORRECT_INDENTATION,
+                                f"The indentation on the closing line for a complex text value must exactly match the key line")
+                if prefix != '\n':
+                    raise_error(XtnErrorCode.INSUFFICIENT_INDENTATION,
+                                f"Lines of complex text must be indented by 4 spaces or a tab compared to the key line")
 
             state.text = state.text + line
         else:
@@ -342,7 +331,7 @@ def _load(f: TextIO, target: XtnObject | None) -> dict[str, Any]:
                     attach_comments(child_target)
                     # type: ignore
                     stack.append(_ArrayState(
-                        start_line=i, current=obj, target=child_target))
+                        start_line=i, current=obj, target=child_target))  # type: ignore
                 elif left.endswith("''"):
                     indent = orig_line[:orig_line.find(left[0])]
                     if len(indent) > 0:

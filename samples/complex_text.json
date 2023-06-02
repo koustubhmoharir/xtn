@@ -1,0 +1,13 @@
+{
+    "key1":"a\n-----",
+    "key2": "a\n  b\nc\n",
+    "key3":"",
+    "key4":[
+        "a\n-----",
+        "a\n  b\nc\n",
+        "",
+        "sdfa\n----",
+        "\tSome lines start with a tab\nno tab here\n\tstarts with a tab and also ends with it\t\nAll tabs must be retained and no error should be reported"
+    ],
+    "key5":"\tSome lines start with a tab\nno tab here\n\tstarts with a tab and also ends with it\t"
+}
