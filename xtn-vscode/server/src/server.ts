@@ -21,7 +21,7 @@ import {
 import {
     TextDocument, TextEdit
 } from 'vscode-languageserver-textdocument';
-import { XtnArray, XtnElement, XtnException, XtnObject, XtnText, breakIntoLines, convert_key } from './parser';
+import { XtnArray, XtnElement, XtnException, XtnObject, XtnText, breakIntoLines, convert_key, convert_simple_value } from './parser';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -357,17 +357,106 @@ function formatStartOrEndLine(lineNo: number | null, lines: string[], firstChar:
                     }
                     if (origLine.length > sepInd + 1) {
                         const c = origLine[sepInd + 1];
-                        if (c !== '\r' && c !== '\n') {
-                            edits.push({
-                                newText: '',
-                                range: {
-                                    start: { line: lineNo, character: sepInd + 1 },
-                                    end: { line: lineNo, character: origLine.length }
+                        if (trimAfterSep) {
+                            if (c !== '\r' && c !== '\n') {
+                                edits.push({
+                                    newText: '',
+                                    range: {
+                                        start: { line: lineNo, character: sepInd + 1 },
+                                        end: { line: lineNo, character: origLine.length }
+                                    }
+                                });
+                            }
+                        }
+                        else {
+                            let vsInd = sepInd + 1;
+                            if (c !== ' ') {
+                                edits.push({
+                                    newText: ' ',
+                                    range: {
+                                        start: { line: lineNo, character: vsInd },
+                                        end: { line: lineNo, character: vsInd }
+                                    }
+                                });
+                            }
+                            else
+                                vsInd++;
+                            const value = origLine.substring(vsInd);
+                            const tlValue = value.trimStart();
+                            if (tlValue.length > 0) {
+                                if (tlValue.length < value.length) {
+                                    edits.push({
+                                        newText: '',
+                                        range: {
+                                            start: { line: lineNo, character: vsInd },
+                                            end: { line: lineNo, character: vsInd + value.length - tlValue.length }
+                                        }
+                                    });
+                                    vsInd += value.length - tlValue.length
                                 }
-                            });
+                                const tValue = tlValue.trimEnd();
+                                const convValue = convert_simple_value(tValue);
+                                if (convValue !== tValue) {
+                                    edits.push({
+                                        newText: convValue,
+                                        range: {
+                                            start: { line: lineNo, character: vsInd },
+                                            end: { line: lineNo, character: vsInd + tValue.length }
+                                        }
+                                    });
+                                }
+                                if (origLine.length > vsInd + tValue.length + 1) {
+                                    const c = origLine[vsInd + tValue.length + 1];
+                                    if (c !== '\r' && c !== '\n') {
+                                        edits.push({
+                                            newText: '',
+                                            range: {
+                                                start: { line: lineNo, character: vsInd + tValue.length },
+                                                end: { line: lineNo, character: origLine.length }
+                                            }
+                                        });
+                                    }
+                                }
+                            }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+function formatComplexTextLines(el: XtnText, lines: string[], expIndent: string, edits: TextEdit[]) {
+    if (el.startLineNo != null && el.endLineNo != null) {
+        const keyLine = lines[el.startLineNo];
+        let indentChar: string | null = keyLine[0];
+        let indentLen = 0;
+        if (indentChar !== ' ' && indentChar !== '\t')
+            indentChar = null;
+        else
+            indentLen = keyLine.length - keyLine.trimStart().length;
+        for (let i = el.startLineNo + 1; i < el.endLineNo; i++) {
+            const origLine = lines[i];
+            if (indentChar == null && origLine.length > 0) {
+                indentChar = origLine[0];
+            }
+            if (indentChar === '\t') {
+                edits.push({
+                    newText: expIndent,
+                    range: {
+                        start: { line: i, character: 0 },
+                        end: { line: i, character: indentLen + 1 }
+                    }
+                });
+            }
+            else if (indentLen + 4 !== expIndent.length) {
+                edits.push({
+                    newText: expIndent,
+                    range: {
+                        start: { line: i, character: 0 },
+                        end: { line: i, character: indentLen + 4 }
+                    }
+                });
             }
         }
     }
@@ -393,6 +482,7 @@ function appendFormatEdits(key: string, el: XtnElement, lines: string[], edits: 
     }
     else if (el instanceof XtnText) {
         formatStartOrEndLine(el.startLineNo, lines, key[0], expIndent, edits);
+        formatComplexTextLines(el, lines, expIndent + '    ', edits);
         formatStartOrEndLine(el.endLineNo, lines, '-', expIndent, edits);
     }
     

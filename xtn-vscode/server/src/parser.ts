@@ -212,6 +212,10 @@ export function convert_key(value: string) {
     return _convert_spaces(value, true);
 }
 
+export function convert_simple_value(value: string) {
+    return _convert_spaces(value, false);
+}
+
 function trimLeadingSpaceOrTab(str: string, char: string) {
     if (char === ' ')
         return str.replace(/^ */, '');
@@ -514,6 +518,7 @@ function _loadFromLines(lines: string[], target: XtnObject | null): Record<strin
                 }
                 else {
                     const child_target = state.set(left, right, raise_key_error);
+                    if (child_target) child_target.startLineNo = i;
                     attach_comments(child_target);
                 }
             }
