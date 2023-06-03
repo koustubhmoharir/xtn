@@ -42,10 +42,10 @@ enum _Mode {
 type XtnValue = string | XtnValue[] | { [key: string]: XtnValue };
 
 export abstract class XtnElement {
-    lineNo: number | null;
+    startLineNo: number | null;
     endLineNo: number | null;
     constructor() {
-        this.lineNo = null;
+        this.startLineNo = null;
         this.endLineNo = null;
     }
 }
@@ -112,9 +112,9 @@ export class XtnObject extends XtnDataElement {
         this.elements = elements || {};
     }
 
-    static load(document: string): XtnObject {
+    static load(lines: string[]): XtnObject {
         const obj = new XtnObject({});
-        _load(document, obj);
+        _loadFromLines(lines, obj);
         return obj;
     }
 
@@ -208,6 +208,10 @@ function _convert_spaces(value: string, collapse: boolean): string {
     return value.replace(pattern, ' ');
 }
 
+export function convert_key(value: string) {
+    return _convert_spaces(value, true);
+}
+
 function trimLeadingSpaceOrTab(str: string, char: string) {
     if (char === ' ')
         return str.replace(/^ */, '');
@@ -236,7 +240,7 @@ class _ObjectState {
 
     set(name: string, value: Record<string, any> | any[] | string, raise_key_error: (code: XtnErrorCode, msg: string, length: number) => never, convert_spaces: boolean = true) {
         const len = name.length;
-        name = _convert_spaces(name, true);
+        name = convert_key(name);
         if (convert_spaces && typeof value === 'string') {
             value = _convert_spaces(value, false);
         }
@@ -268,7 +272,7 @@ class _ArrayState {
     }
 
     set(name: string, value: Record<string, any> | any[] | string, raise_error: (code: XtnErrorCode, msg: string, length: number) => never, convert_spaces: boolean = true) {
-        name = _convert_spaces(name, true);
+        name = convert_key(name);
         if (convert_spaces && typeof value === 'string') {
             value = _convert_spaces(value, false);
         }
@@ -310,7 +314,7 @@ class _MultilineState {
     }
 }
 
-function breakIntoLines(document: string) {
+export function breakIntoLines(document: string) {
     const lines = [...document.matchAll(/[^\r\n]*(?:\r\n|\r|\n|$)/g)];
     lines.pop();
     return lines.map(m => m[0]);
@@ -326,6 +330,10 @@ function trimEndOfLine(line: string) {
 }
 
 function _load(document: string, target: XtnObject | null): Record<string, any> {
+    const lines = breakIntoLines(document);
+    return _loadFromLines(lines, target);
+}
+function _loadFromLines(lines: string[], target: XtnObject | null): Record<string, any> {
     const top_level: Record<string, any> = target == null ? {} : target.elements;
     const stack: (_ObjectState | _ArrayState | _MultilineState)[] = [
         new _ObjectState(-1, top_level, target, false)
@@ -369,16 +377,17 @@ function _load(document: string, target: XtnObject | null): Record<string, any> 
                     comments.push(new XtnComment(value, prefix));
                 }
             }
-            comments[comments.length - 1].lineNo = i;
+            comments[comments.length - 1].startLineNo = i;
         }
     }
     function raise_error(code: XtnErrorCode, msg: string, colStart: number, colEnd: number): never {
         throw new XtnException(code, i, colStart, colEnd, msg);
     }
+    let keyLineNo = i;
     function raise_key_error(code: XtnErrorCode, msg: string, length: number): never {
-        throw new XtnException(code, i, leftColStart, leftColStart + length, msg);
+        throw new XtnException(code, keyLineNo, leftColStart, leftColStart + length, msg);
     }
-    for (orig_line of breakIntoLines(document)) {
+    for (orig_line of lines) {
         i++;
         let line: string = orig_line;
         const state = stack[stack.length - 1];
@@ -414,7 +423,7 @@ function _load(document: string, target: XtnObject | null): Record<string, any> 
                     if (act_indent_len == state.indent.length) {
                         const child_target = state.parent_state.set(state.name, trimEndOfLine(state.text), raise_key_error, false);
                         if (child_target != null) {
-                            child_target.lineNo = state.start_line;
+                            child_target.startLineNo = state.start_line;
                             child_target.endLineNo = i;
                             (child_target as XtnText).force_multiline = true;
                             attach_comments(child_target);
@@ -460,8 +469,9 @@ function _load(document: string, target: XtnObject | null): Record<string, any> 
                     }
                     const name = left.substring(0, left.length -2).trimEnd();
                     const obj: Record<string, any> = {};
+                    keyLineNo = i;
                     const child_target = state.set(name, obj, raise_key_error);
-                    if (child_target) child_target.lineNo = i;
+                    if (child_target) child_target.startLineNo = i;
                     attach_comments(child_target);
                     stack.push(new _ObjectState(i, obj, child_target as XtnObject, state.mode === 'ARRAY'));
                 }
@@ -472,8 +482,9 @@ function _load(document: string, target: XtnObject | null): Record<string, any> 
                     }
                     const name = left.substring(0, left.length -2).trimEnd();
                     const obj: any[] = [];
+                    keyLineNo = i;
                     const child_target = state.set(name, obj, raise_key_error);
-                    if (child_target) child_target.lineNo = i;
+                    if (child_target) child_target.startLineNo = i;
                     attach_comments(child_target);
                     stack.push(new _ArrayState(i, obj, child_target as XtnArray));
                 }
@@ -498,6 +509,7 @@ function _load(document: string, target: XtnObject | null): Record<string, any> 
                         const colEnd = orig_line.lastIndexOf(right[right.length - 1]) + 1;
                         raise_error(XtnErrorCode.MULTILINE_MUST_BE_ON_NEW_LINE, 'A multiline value must start on a new line', colEnd - right.length, colEnd);
                     }
+                    keyLineNo = i;
                     stack.push(new _MultilineState(i, orig_line.indexOf(left[0]), name, state, indent));
                 }
                 else {

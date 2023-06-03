@@ -12,13 +12,16 @@ import {
     TextDocumentSyncKind,
     InitializeResult,
     FoldingRangeParams,
-    FoldingRange
+    FoldingRange,
+    DocumentFormattingParams,
+    DocumentOnTypeFormattingParams,
+    DocumentRangeFormattingParams
 } from 'vscode-languageserver/node';
 
 import {
-    TextDocument
+    TextDocument, TextEdit
 } from 'vscode-languageserver-textdocument';
-import { XtnArray, XtnElement, XtnException, XtnObject } from './parser';
+import { XtnArray, XtnElement, XtnException, XtnObject, XtnText, breakIntoLines, convert_key } from './parser';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -55,7 +58,12 @@ connection.onInitialize((params: InitializeParams) => {
             completionProvider: {
                 resolveProvider: true
             },
-            foldingRangeProvider: true
+            foldingRangeProvider: true,
+            documentFormattingProvider: true,
+            documentOnTypeFormattingProvider: {
+                firstTriggerCharacter: '----'
+            },
+            documentRangeFormattingProvider: true
         }
     };
     if (hasWorkspaceFolderCapability) {
@@ -94,15 +102,16 @@ let globalSettings: ExampleSettings = defaultSettings;
 // Cache the settings of all open documents
 const documentSettings: Map<string, Thenable<ExampleSettings>> = new Map();
 
-const parseCache: Map<string, { version: number; obj?: XtnObject; error?: XtnException }> = new Map();
+const parseCache: Map<string, { version: number; lines?: string[]; obj?: XtnObject; error?: XtnException }> = new Map();
 function getParsedDocument(uri: string, doc?: TextDocument) {
     let entry = parseCache.get(uri);
     if (!doc) return entry;
     if (!entry || entry.version !== doc.version) {
         let obj;
+        let lines = breakIntoLines(doc.getText());
         let error;
         try {
-            obj = XtnObject.load(doc.getText());
+            obj = XtnObject.load(lines);
         }
         catch (ex) {
             if (ex instanceof XtnException)
@@ -111,6 +120,7 @@ function getParsedDocument(uri: string, doc?: TextDocument) {
         entry = ({
             version: doc.version,
             obj,
+            lines,
             error
         });
         parseCache.set(doc.uri, entry);
@@ -252,9 +262,9 @@ connection.onCompletionResolve(
 );
 
 function appendFoldingRanges(el: XtnElement, ranges: FoldingRange[]) {
-    if (el.lineNo != null && el.endLineNo != null) {
+    if (el.startLineNo != null && el.endLineNo != null) {
         ranges.push({
-            startLine: el.lineNo,
+            startLine: el.startLineNo,
             endLine: el.endLineNo
         });
     }
@@ -277,6 +287,132 @@ connection.onFoldingRanges((p: FoldingRangeParams) => {
     let ranges: FoldingRange[] = [];
     appendFoldingRanges(entry.obj, ranges);
     return ranges;
+});
+
+
+function formatStartOrEndLine(lineNo: number | null, lines: string[], firstChar: string, expIndent: string, edits: TextEdit[]) {
+    if (lineNo != null) {
+        const origLine = lines[lineNo];
+        if (origLine != null) {
+            const actIndentLen = origLine.indexOf(firstChar);
+            const actIndent = origLine.substring(0, Math.max(0, actIndentLen));
+            if (expIndent !== actIndent) {
+                edits.push({
+                    newText: expIndent,
+                    range: {
+                        start: { line: lineNo, character: 0 },
+                        end: { line: lineNo, character: actIndentLen }
+                    }
+                });
+            }
+            if (firstChar === '-') {
+                const last = origLine.lastIndexOf('-');
+                if (last >= 0) {
+                    edits.push({
+                        newText: '',
+                        range: {
+                            start: { line: lineNo, character: last + 1 },
+                            end: { line: lineNo, character: origLine.length }
+                        }
+                    });
+                }
+            }
+            else {
+                const sepInd = origLine.indexOf(':');
+                if (sepInd >= 0) {
+                    const keyWithSuf = origLine.substring(actIndentLen, sepInd);
+                    const trKeyWithSuf = keyWithSuf.trimEnd();
+                    let trimAfterSep = false;
+                    if (trKeyWithSuf.endsWith('{}') || trKeyWithSuf.endsWith('[]') || trKeyWithSuf.endsWith("''")) {
+                        trimAfterSep = true;
+                        const key = trKeyWithSuf.substring(0, trKeyWithSuf.length - 2).trimEnd();
+                        const convKey = convert_key(key);
+                        if (convKey !== key) {
+                            edits.push({
+                                newText: convKey,
+                                range: {
+                                    start: { line: lineNo, character: actIndentLen },
+                                    end: { line: lineNo, character: actIndentLen + key.length }
+                                }
+                            });
+                        }
+                        if (key.length < trKeyWithSuf.length - 2) {
+                            edits.push({
+                                newText: '',
+                                range: {
+                                    start: { line: lineNo, character: actIndentLen + key.length },
+                                    end: { line: lineNo, character: actIndentLen + trKeyWithSuf.length - 2 }
+                                }
+                            });
+                        }
+                    }
+                    if (trKeyWithSuf.length < keyWithSuf.length) {
+                        edits.push({
+                            newText: '',
+                            range: {
+                                start: { line: lineNo, character: actIndentLen + trKeyWithSuf.length },
+                                end: { line: lineNo, character: sepInd }
+                            }
+                        });
+                    }
+                    if (origLine.length > sepInd + 1) {
+                        const c = origLine[sepInd + 1];
+                        if (c !== '\r' && c !== '\n') {
+                            edits.push({
+                                newText: '',
+                                range: {
+                                    start: { line: lineNo, character: sepInd + 1 },
+                                    end: { line: lineNo, character: origLine.length }
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+function appendFormatEdits(key: string, el: XtnElement, lines: string[], edits: TextEdit[], indent: string | null) {
+    const expIndent = indent == null ? '' : indent;
+    if (el instanceof XtnObject) {
+        formatStartOrEndLine(el.startLineNo, lines, key[0], expIndent, edits);
+        const childIndent = indent == null ? '' : indent + '    ';
+        for (const key in el.elements) {
+            appendFormatEdits(key, el.elements[key], lines, edits, childIndent);
+        }
+        formatStartOrEndLine(el.endLineNo, lines, '-', expIndent, edits);
+    }
+    else if (el instanceof XtnArray) {
+        formatStartOrEndLine(el.startLineNo, lines, key[0], expIndent, edits);
+        const childIndent = indent == null ? '' : indent + '    ';
+        for (const ch of el.elements) {
+            appendFormatEdits("+", ch, lines, edits, childIndent);
+        }
+        formatStartOrEndLine(el.endLineNo, lines, '-', expIndent, edits);
+    }
+    else if (el instanceof XtnText) {
+        formatStartOrEndLine(el.startLineNo, lines, key[0], expIndent, edits);
+        formatStartOrEndLine(el.endLineNo, lines, '-', expIndent, edits);
+    }
+    
+}
+
+connection.onDocumentFormatting((p: DocumentFormattingParams) => {
+    const entry = getParsedDocument(p.textDocument.uri);
+    if (!entry || entry.error || !entry.obj) return null;
+    const lines = entry.lines!;
+    const edits: TextEdit[] = [];
+    appendFormatEdits("", entry.obj, lines, edits, null);
+    return edits;
+})
+
+connection.onDocumentOnTypeFormatting((p: DocumentOnTypeFormattingParams) => {
+    return [];
+})
+
+connection.onDocumentRangeFormatting((p: DocumentRangeFormattingParams) => {
+    return [];
 })
 
 // Make the text document manager listen on the connection
@@ -285,3 +421,4 @@ documents.listen(connection);
 
 // Listen on the connection
 connection.listen();
+
