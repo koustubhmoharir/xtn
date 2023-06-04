@@ -21,7 +21,7 @@ import {
 import {
     TextDocument, TextEdit
 } from 'vscode-languageserver-textdocument';
-import { XtnArray, XtnElement, XtnException, XtnObject, XtnText, breakIntoLines, convert_key, convert_simple_value } from './parser';
+import { XtnArray, XtnComment, XtnDataElement, XtnElement, XtnException, XtnObject, XtnText, breakIntoLines, convert_key, convert_simple_value } from './parser';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -449,7 +449,7 @@ function formatComplexTextLines(el: XtnText, lines: string[], expIndent: string,
                     }
                 });
             }
-            else if (indentLen + 4 !== expIndent.length) {
+            else if (indentLen + 4 !== expIndent.length || origLine.substring(0, expIndent.length) !== expIndent) {
                 edits.push({
                     newText: expIndent,
                     range: {
@@ -462,13 +462,62 @@ function formatComplexTextLines(el: XtnText, lines: string[], expIndent: string,
     }
 }
 
-function appendFormatEdits(key: string, el: XtnElement, lines: string[], edits: TextEdit[], indent: string | null) {
+function formatComments(comments: XtnComment[], lines: string[], expIndent: string, edits: TextEdit[]) {
+    for (const comment of comments) {
+        const lineNo = comment.startLineNo;
+        if (lineNo != null) {
+            const origLine = lines[lineNo];
+            const line = origLine.trimStart();
+            const indentLen = origLine.length - line.length;
+            if (indentLen !== expIndent.length || origLine.substring(0, indentLen) !== expIndent) {
+                edits.push({
+                    newText: expIndent,
+                    range: {
+                        start: { line: lineNo, character: 0 },
+                        end: { line: lineNo, character: indentLen }
+                    }
+                });
+            }
+            if (line.startsWith('##')) {
+                const tlLine = line.substring(2).trimStart();
+                if (tlLine.length !== line.length - 2) {
+                    edits.push({
+                        newText: '',
+                        range: {
+                            start: { line: lineNo, character: indentLen + 2 },
+                            end: { line: lineNo, character: indentLen + line.length - tlLine.length }
+                        }
+                    });
+                }
+            }
+            else if (line.startsWith('#')) {
+                if (line.length > 1 && line[1] !== ' ') {
+                    edits.push({
+                        newText: ' ',
+                        range: {
+                            start: { line: lineNo, character: indentLen + 1 },
+                            end: { line: lineNo, character: indentLen + 1 + (line[1].trimEnd().length === 0 ? 1 : 0) }
+                        }
+                    });
+                }
+            }
+        }
+    }
+}
+
+function appendFormatEdits(key: string, el: XtnDataElement, lines: string[], edits: TextEdit[], indent: string | null) {
     const expIndent = indent == null ? '' : indent;
+    if (el.comments?.length) {
+        formatComments(el.comments, lines, expIndent, edits);
+    }
     if (el instanceof XtnObject) {
         formatStartOrEndLine(el.startLineNo, lines, key[0], expIndent, edits);
         const childIndent = indent == null ? '' : indent + '    ';
         for (const key in el.elements) {
             appendFormatEdits(key, el.elements[key], lines, edits, childIndent);
+        }
+        if (el.trail_comments?.length) {
+            formatComments(el.trail_comments, lines, childIndent, edits);
         }
         formatStartOrEndLine(el.endLineNo, lines, '-', expIndent, edits);
     }
@@ -478,6 +527,9 @@ function appendFormatEdits(key: string, el: XtnElement, lines: string[], edits: 
         for (const ch of el.elements) {
             appendFormatEdits("+", ch, lines, edits, childIndent);
         }
+        if (el.trail_comments?.length) {
+            formatComments(el.trail_comments, lines, childIndent, edits);
+        }
         formatStartOrEndLine(el.endLineNo, lines, '-', expIndent, edits);
     }
     else if (el instanceof XtnText) {
@@ -485,7 +537,6 @@ function appendFormatEdits(key: string, el: XtnElement, lines: string[], edits: 
         formatComplexTextLines(el, lines, expIndent + '    ', edits);
         formatStartOrEndLine(el.endLineNo, lines, '-', expIndent, edits);
     }
-    
 }
 
 connection.onDocumentFormatting((p: DocumentFormattingParams) => {
