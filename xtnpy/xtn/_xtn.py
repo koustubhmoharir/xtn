@@ -87,13 +87,16 @@ class XtnObject(XtnDataElement):
             lines = value.splitlines()
             if len(value) == 0 or value.endswith('\n'):
                 lines.append('')
+            i = -1
             for line in lines:
+                i = i + 1
                 line = line.rstrip()
-                if len(line) == 0:
+                if i == 0 and len(comment.prefix) > 0:
+                    write(indent, '##', comment.prefix, ' ', line)
+                elif len(line) == 0:
                     write()
                 else:
-                    write(indent, '#', comment.prefix,
-                          '' if line[0:1].isspace() else ' ', line)
+                    write(indent, '# ', line)
 
         def write_comments(comments: list[XtnComment] | None, indent: str):
             if comments is not None and len(comments) > 0:
@@ -229,14 +232,20 @@ def _load(f: TextIO, target: XtnObject | None) -> dict[str, Any]:
             if len(line) == 0:
                 comments.append(XtnComment(''))
             else:
-                value = line.lstrip('#')
-                prefix = '#' * (len(line) - len(value) - 1)
-                if value[0:1].isspace():
-                    value = value[1:]
-                if value.isspace():
+                prefix = ''
+                if line.startswith('##'):
+                    line = line[2:].lstrip()
+                    m = re.match(r'^\s*([^\s]*)', line)
+                    if m is not None:
+                        prefix = m.group(1)
+                        if len(prefix) > 0:
+                            line = line[(line.find(prefix[0]) + len(prefix)):].lstrip()
+                elif len(line) > 0:
+                    line = line[(2 if line[1].isspace() else 1):]
+                if line.isspace():
                     comments.append(XtnComment(''))
                 else:
-                    comments.append(XtnComment(value, prefix))
+                    comments.append(XtnComment(line, prefix))
 
     def attach_comments(target: XtnDataElement | None):
         if target is not None and comments is not None and len(comments) > 0:
@@ -370,7 +379,8 @@ def _load(f: TextIO, target: XtnObject | None) -> dict[str, Any]:
                 else:
                     raise_error(XtnErrorCode.MISSING_COLON,
                                 f"A colon was expected")
-
+    
+    attach_trailing_comments(stack[-1].target)
     i += 1
     if len(stack) > 1:
         raise_error(XtnErrorCode.MISSING_CLOSE_MARKER,

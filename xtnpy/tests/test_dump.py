@@ -12,7 +12,7 @@ def match_obj(obj: xtn.XtnObject, sample_name):
 
 def test_write_sample1():
     obj = utils.load_sample_xtn_obj('sample1')
-    match_obj(obj, 'sample1')
+    match_obj(obj, 'sample1_formatted')
     
     
 def test_write_leading_space():

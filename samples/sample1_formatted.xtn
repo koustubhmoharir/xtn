@@ -1,7 +1,7 @@
 key1: value1
 
 # This is a comment
-#This is a comment (same as above)
+# This is a comment (same as above)
 
 key2{}:
     key3: value3
@@ -34,4 +34,4 @@ key2{}:
 ----
 
 ##meta This is a special comment
-## meta This is the same as above (still a special comment)
+##meta This is the same as above (still a special comment)

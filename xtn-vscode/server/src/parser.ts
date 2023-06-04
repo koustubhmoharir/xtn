@@ -126,13 +126,19 @@ export class XtnObject extends XtnDataElement {
 
         const write_comment = (comment: XtnComment, indent: string) => {
             const value = comment.value;
-            const lines = value.split(/\r?\n/);
+            const lines = breakIntoLines(value);
+            let i = -1;
             for (let line of lines) {
+                ++i;
                 line = line.trimEnd();
-                if (line.length === 0) {
+                if (i === 0 && comment.prefix) {
+                    write(indent, '##', comment.prefix, ' ', line);
+                }
+                else if (line.length === 0) {
                     write();
-                } else {
-                    write(indent, '#', comment.prefix, isWhiteSpace(line.substring(0, 1)) ? '' : ' ', line);
+                }
+                else {
+                    write(indent, '# ', line);
                 }
             };
         }
@@ -369,16 +375,21 @@ function _loadFromLines(lines: string[], target: XtnObject | null): Record<strin
                 comments.push(new XtnComment(''));
             }
             else {
-                let value = line.replace(/^#*/, '');
-                const prefix = '#'.repeat(line.length - value.length - 1);
-                if (isWhiteSpace(value.substring(0, 1))) {
-                    value = value.substring(1);
+                let prefix = '';
+                if (line.startsWith('##')) {
+                    line = line.substring(2).trimStart();
+                    prefix = line.match(/^\s*([^\s]*)/)?.[1] ?? '';
+                    if (prefix.length)
+                        line = line.substring(line.indexOf(prefix[0]) + prefix.length).trimStart();
                 }
-                if (isWhiteSpace(value)) {
+                else if (line.length > 0)
+                    line = line.substring(line[1].trimStart().length === 0 ? 2 : 1);
+                
+                if (isWhiteSpace(line)) {
                     comments.push(new XtnComment(''));
                 }
                 else {
-                    comments.push(new XtnComment(value, prefix));
+                    comments.push(new XtnComment(line, prefix));
                 }
             }
             comments[comments.length - 1].startLineNo = i;

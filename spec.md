@@ -6,7 +6,7 @@ Newlines are significant. Other whitespace is insignificant in most (but not all
 Casing is significant, but applications that consume this format may ignore it.
 
 ## Comments
-Comments start with a #. Whitespace before the # is allowed. An entire line is either a comment or not a comment.
+Comments start with a #. Whitespace before the # is allowed. An entire line is either a comment or not a comment. A space after the # is recommended for readability. Trailing whitespace on a comment line is not considered significant.
 ```
 # This is a comment
 ```
@@ -74,3 +74,12 @@ Whitespace is allowed between the key and the first single quote, and between th
 The newline on the line immediately above the closing line is not part of the text value.
 
 Complex text values may appear in key value pairs or in array elements.
+
+## Extensions via comments
+
+A comment starting with ## is considered a "special" comment. The first word after the ## is considered part of the special syntax. It is recommended to not have a space between the ## and the first word after it. The significance of special comments is application defined. This specification merely standardizes a way to add metadata via comments.
+
+This is an example of adding type metadata
+```
+##type TypeName
+```

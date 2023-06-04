@@ -27,6 +27,17 @@ def test_load_sample1():
     assert(isinstance(key7_val, xtn.XtnText))
     assert(key7_val.force_multiline)
 
+    assert(key2_val.comments is not None and len(key2_val.comments) == 4)
+    assert(key2_val.comments[1].prefix == '')
+    assert(key2_val.comments[1].value == 'This is a comment')
+    assert(key2_val.comments[2].value == 'This is a comment (same as above)')
+
+    assert(obj.trail_comments is not None and len(obj.trail_comments) == 3)
+    assert(obj.trail_comments[1].prefix == 'meta')
+    assert(obj.trail_comments[1].value == 'This is a special comment')
+    assert(obj.trail_comments[2].prefix == 'meta')
+    assert(obj.trail_comments[2].value == 'This is the same as above (still a special comment)')
+
 def test_convert_nbsp():
     obj = utils.load_sample_xtn('convert_nbsp')
     assert obj['key1'] == 'a  b    c d'
