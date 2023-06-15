@@ -10,11 +10,11 @@
     //     ["'", "'"]
     ],
     // symbols that are auto closed when typing
-    "autoClosingPairs": [
-        ["{}:", "----"],
-        ["[]:", "----"],
-        ["'':", "----"]
-    ],
+    // "autoClosingPairs": [
+    //     ["{}:", "----"],
+    //     ["[]:", "----"],
+    //     ["'':", "----"]
+    // ],
     // symbols that can be used to surround a selection
     // "surroundingPairs": [
     //     ["{", "}"],
@@ -23,16 +23,16 @@
     //     ["\"", "\""],
     //     ["'", "'"]
     // ]
-    "indentationRules": {
-        "increaseIndentPattern": "\\s*(\\+|[^-+{}\\[\\]:'\\s][^{}\\[\\]: ']+)\\s*(\\[\\]|\\{\\}|'')\\s*[:]",
-        "decreaseIndentPattern": "\\s*----\\s*"
-    },
-    "onEnterRules": [
-        {
-            "beforeText": "\\s*(\\+|[^-+{}\\[\\]:'\\s][^{}\\[\\]: ']*)\\s*(\\[\\]|\\{\\}|'')\\s*[:]",
-            "action": {
-                "indent": "indentOutdent"
-            }
-        }
-    ]
+    // "indentationRules": {
+    //     "increaseIndentPattern": "\\s*(\\+|[^-+{}\\[\\]:'\\s][^{}\\[\\]: ']+)\\s*(\\[\\]|\\{\\}|'')\\s*[:]",
+    //     "decreaseIndentPattern": "\\s*----\\s*"
+    // },
+    // "onEnterRules": [
+    //     {
+    //         "beforeText": "\\s*(\\+|[^-+{}\\[\\]:'\\s][^{}\\[\\]: ']*)\\s*(\\[\\]|\\{\\}|'')\\s*[:]",
+    //         "action": {
+    //             "indent": "indentOutdent"
+    //         }
+    //     }
+    // ]
 }

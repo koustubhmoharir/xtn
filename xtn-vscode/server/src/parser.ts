@@ -22,14 +22,16 @@ export class XtnException extends Error {
     line_no: number;
     colStart: number;
     colEnd: number;
+    obj: XtnObject | null;
 
-    constructor(code: XtnErrorCode, line_no: number, colStart: number, colEnd: number, message: string) {
+    constructor(code: XtnErrorCode, line_no: number, colStart: number, colEnd: number, message: string, obj: XtnObject | null) {
         super(message);
         this.code = code;
         this.message = message;
         this.line_no = line_no;
         this.colStart = colStart;
         this.colEnd = colEnd;
+        this.obj = obj;
     }
 }
 
@@ -62,13 +64,13 @@ export class XtnComment extends XtnElement {
 }
 
 export class XtnDataElement extends XtnElement {
-    comments: XtnComment[] | null;
-    trail_comments: XtnComment[] | null;
+    comments_above: XtnComment[] | null;
+    comments_below: XtnComment[] | null;
 
-    constructor(comments: XtnComment[] | null = null, trail_comments: XtnComment[] | null = null) {
+    constructor(comments_above: XtnComment[] | null = null, comments_below: XtnComment[] | null = null) {
         super();
-        this.comments = comments;
-        this.trail_comments = trail_comments;
+        this.comments_above = comments_above;
+        this.comments_below = comments_below;
     }
 }
 
@@ -76,8 +78,8 @@ export class XtnText extends XtnDataElement {
     value: string;
     force_multiline: boolean;
 
-    constructor(value: string, force_multiline: boolean = false, comments: XtnComment[] | null = null) {
-        super(comments);
+    constructor(value: string, force_multiline: boolean = false, comments_above: XtnComment[] | null = null, comments_below: XtnComment[] | null = null) {
+        super(comments_above, comments_below);
         this.value = value;
         this.force_multiline = force_multiline;
     }
@@ -85,10 +87,14 @@ export class XtnText extends XtnDataElement {
 
 export class XtnArray extends XtnDataElement {
     elements: XtnDataElement[];
+    comments_inner_top: XtnComment[] | null;
+    comments_inner_bottom: XtnComment[] | null;
 
-    constructor(elements: XtnDataElement[], comments: XtnComment[] | null = null, trail_comments: XtnComment[] | null = null) {
-        super(comments, trail_comments);
+    constructor(elements: XtnDataElement[], comments_above: XtnComment[] | null = null, comments_inner_top: XtnComment[] | null = null, comments_inner_bottom: XtnComment[] | null = null, comments_below: XtnComment[] | null = null) {
+        super(comments_above, comments_below);
         this.elements = elements;
+        this.comments_inner_top = comments_inner_top;
+        this.comments_inner_bottom = comments_inner_bottom;
     }
 }
 
@@ -106,10 +112,14 @@ function hasNon32Whitespace(str: string) {
 
 export class XtnObject extends XtnDataElement {
     elements: { [key: string]: XtnDataElement };
+    comments_inner_top: XtnComment[] | null;
+    comments_inner_bottom: XtnComment[] | null;
 
-    constructor(elements: { [key: string]: XtnDataElement } | null = null, comments: XtnComment[] | null = null, trail_comments: XtnComment[] | null = null) {
-        super(comments, trail_comments);
+    constructor(elements: { [key: string]: XtnDataElement } | null = null, comments_above: XtnComment[] | null = null, comments_inner_top: XtnComment[] | null = null, comments_inner_bottom: XtnComment[] | null = null, comments_below: XtnComment[] | null = null) {
+        super(comments_above, comments_below);
         this.elements = elements || {};
+        this.comments_inner_top = comments_inner_top;
+        this.comments_inner_bottom = comments_inner_bottom;
     }
 
     static load(lines: string[]): XtnObject {
@@ -151,24 +161,26 @@ export class XtnObject extends XtnDataElement {
         }
         
         const write_pair = (name: string, element: XtnDataElement, indent: string) => {
-            write_comments(element.comments, indent);
+            write_comments(element.comments_above, indent);
             if (element instanceof XtnArray) {
                 write(indent, name, '[]:');
                 const innerIndent = indent + '    ';
+                write_comments(element.comments_inner_top, innerIndent);
                 for (const arrayElement of element.elements) {
                     write_pair('+', arrayElement, innerIndent);
                 }
-                write_comments(element.trail_comments, innerIndent);
+                write_comments(element.comments_inner_bottom, innerIndent);
                 write(indent, '----');
             }
             else if (element instanceof XtnObject) {
                 write(indent, name, '{}:');
                 const innerIndent = indent + '    ';
+                write_comments(element.comments_inner_top, innerIndent);
                 for (const key in element.elements) {
                     const value = element.elements[key];
                     write_pair(key, value, innerIndent);
                 }
-                write_comments(element.trail_comments, innerIndent);
+                write_comments(element.comments_inner_bottom, innerIndent);
                 write(indent, '----');
             }
             else if (element instanceof XtnText) {
@@ -186,14 +198,15 @@ export class XtnObject extends XtnDataElement {
                     write(indent, name, ": ", value);
                 }
             }
+            write_comments(element.comments_below, indent);
             
         };
 
-        write_comments(this.comments, '');
+        write_comments(this.comments_inner_top, '');
         for (const key in this.elements) {
             write_pair(key, this.elements[key], '');
         }
-        write_comments(this.trail_comments, '');
+        write_comments(this.comments_inner_bottom, '');
     }
 }
 
@@ -228,7 +241,7 @@ function trimLeadingSpaceOrTab(str: string, char: string) {
     return str.replace(/^\t*/, '');
 }
 
-function partition(str: string, sep: string) {
+export function partition(str: string, sep: string) {
     const i = str.indexOf(sep);
     if (i >= 0) return [str.substring(0, i), sep, str.substring(i + sep.length)];
     return [str, '', ''];
@@ -248,22 +261,27 @@ class _ObjectState {
         this.in_array = in_array;
     }
 
-    set(name: string, value: Record<string, any> | any[] | string, raise_key_error: (code: XtnErrorCode, msg: string, length: number) => never, convert_spaces: boolean = true) {
+    set(name: string, value: Record<string, any> | any[] | string, raise_key_error: (code: XtnErrorCode, msg: string, length: number) => void, complexSetter?: [(v: string) => void]) {
         const len = name.length;
         name = convert_key(name);
-        if (convert_spaces && typeof value === 'string') {
+        if (typeof value === 'string') {
             value = _convert_spaces(value, false);
         }
         if (name in this.current) {
             raise_key_error(XtnErrorCode.OBJECT_KEYS_CANNOT_BE_REPEATED, `Object keys cannot be repeated. ${name} already exists.`, len);
+            name += '+' + (Object.keys(this.current).length + 1);
         }
         if (this.target == null) {
             this.current[name] = value;
+            if (complexSetter)
+                complexSetter[0] = v => this.current[name] = v;
             return null;
         }
         else {
             const child = _make_Xtn(value);
             this.current[name] = child;
+            if (complexSetter)
+                complexSetter[0] = v => (child as XtnText).value = v;
             return child;
         }
     }
@@ -281,9 +299,9 @@ class _ArrayState {
         this.target = target;
     }
 
-    set(name: string, value: Record<string, any> | any[] | string, raise_error: (code: XtnErrorCode, msg: string, length: number) => never, convert_spaces: boolean = true) {
+    set(name: string, value: Record<string, any> | any[] | string, raise_error: (code: XtnErrorCode, msg: string, length: number) => void, complexSetter?: [(v: string) => void]) {
         name = convert_key(name);
-        if (convert_spaces && typeof value === 'string') {
+        if (typeof value === 'string') {
             value = _convert_spaces(value, false);
         }
         if (name !== '+') {
@@ -294,10 +312,18 @@ class _ArrayState {
         }
         if (this.target === null) {
             this.current.push(value);
+            if (complexSetter) {
+                const i = this.current.length - 1;
+                complexSetter[0] = v => this.current[i] = v;
+            }
             return null;
-        } else {
+        }
+        else {
             const child = _make_Xtn(value);
             this.current.push(child);
+            if (complexSetter) {
+                complexSetter[0] = v => (child as XtnText).value = v;
+            }
             return child;
         }
     }
@@ -306,20 +332,19 @@ class _ArrayState {
 class _MultilineState {
     start_line: number;
     startCol: number;
-    name: string;
-    parent_state: _ObjectState | _ArrayState;
     indent: string;
+    target: XtnText | null;
+    setter: (v: string) => void;
     indent_char: string = ' ';
     exp_indent: string | null = null;
     text: string = '';
-    target: any = null;
     mode: 'MULTILINE' = 'MULTILINE';
 
-    constructor(start_line: number, startCol: number, name: string, parent_state: _ObjectState | _ArrayState, indent: string) {
+    constructor(start_line: number, startCol: number, target: XtnText | null, setter: (v: string) => void, indent: string) {
         this.start_line = start_line;
         this.startCol = startCol;
-        this.name = name;
-        this.parent_state = parent_state;
+        this.target = target;
+        this.setter = setter;
         this.indent = indent;
     }
 }
@@ -330,7 +355,7 @@ export function breakIntoLines(document: string) {
     return lines.map(m => m[0]);
 }
 
-function trimEndOfLine(line: string) {
+export function trimEndOfLine(line: string) {
     if (line.endsWith('\r\n'))
         return line.substring(0, line.length - 2);
     const last = line.substring(line.length - 1);
@@ -349,58 +374,104 @@ function _loadFromLines(lines: string[], target: XtnObject | null): Record<strin
         new _ObjectState(-1, top_level, target, false)
     ];
 
-    const comments: XtnComment[] | null = target != null ? [] : null;
+    const commentsUp: XtnComment[] | null = target != null ? [] : null;
+    const commentsDown: XtnComment[] | null = target != null ? [] : null;
+    let upProp = 'inner';
+    let upTarget: XtnDataElement | null = target;
 
     function attach_comments(target: XtnDataElement | null): void {
-        if (target != null && comments?.length) {
-            target.comments = comments.slice();
-            comments.length = 0;
+        if (target == null) return;
+        if (commentsUp?.length) {
+            if (upProp === 'inner')
+                (upTarget as XtnArray | XtnObject).comments_inner_top = commentsUp.slice();
+            else
+                upTarget!.comments_below = commentsUp.slice();
+            commentsUp.length = 0;
         }
+        if (commentsDown?.length) {
+            target.comments_above = commentsDown.slice();
+            commentsDown.length = 0;
+        }
+        upTarget = target;
+        upProp = target instanceof XtnText ? 'below' : 'inner';
     }
 
     function attach_trailing_comments(target: XtnDataElement | null): void {
-        if (target != null && comments?.length) {
-            target.trail_comments = comments.slice();
-            comments.length = 0;
+        if (target == null) return;
+        if (commentsUp?.length) {
+            if (upProp === 'inner')
+                (upTarget as XtnArray | XtnObject).comments_inner_top = commentsUp.slice();
+            else
+                upTarget!.comments_below = commentsUp.slice();
+            commentsUp.length = 0;
         }
+        if (commentsDown?.length) {
+            (target as XtnArray | XtnObject).comments_inner_bottom = commentsDown.slice();
+            commentsDown.length = 0;
+        }
+        upTarget = target;
+        upProp = 'below';
     }
 
     let i = -1;
     let orig_line: string;
     let leftColStart: number;
+    let firstException: XtnException | null = null;
 
     function record_comment(line: string): void {
-        if (comments !== null) {
+        if (commentsDown !== null) {
+            let comment: XtnComment;
             if (line.length === 0) {
-                comments.push(new XtnComment(''));
+                commentsDown.push(comment = new XtnComment(''));
             }
             else {
                 let prefix = '';
                 if (line.startsWith('##')) {
-                    line = line.substring(2).trimStart();
-                    prefix = line.match(/^\s*([^\s]*)/)?.[1] ?? '';
-                    if (prefix.length)
-                        line = line.substring(line.indexOf(prefix[0]) + prefix.length).trimStart();
+                    if (line.startsWith('####')) {
+                        line = line.substring(4).trimStart();
+                        prefix = '##';
+                    }
+                    else {
+                        line = line.substring(2).trimStart();
+                        prefix = line.match(/^\s*([^\s]*)/)?.[1] ?? '';
+                        if (prefix.length)
+                            line = line.substring(line.indexOf(prefix[0]) + prefix.length).trimStart();
+                    }
                 }
                 else if (line.length > 0)
                     line = line.substring(line[1].trimStart().length === 0 ? 2 : 1);
                 
-                if (isWhiteSpace(line)) {
-                    comments.push(new XtnComment(''));
+                if (prefix === '##') {
+                    commentsDown.push(comment = new XtnComment(line, prefix));
+                    commentsUp?.push(...commentsDown);
+                    commentsDown.length = 0
+                }
+                else if (isWhiteSpace(line)) {
+                    commentsDown.push(comment = new XtnComment(''));
                 }
                 else {
-                    comments.push(new XtnComment(line, prefix));
+                    commentsDown.push(comment = new XtnComment(line, prefix));
                 }
             }
-            comments[comments.length - 1].startLineNo = i;
+            comment.startLineNo = i;
         }
     }
-    function raise_error(code: XtnErrorCode, msg: string, colStart: number, colEnd: number): never {
-        throw new XtnException(code, i, colStart, colEnd, msg);
+    function raise_error_actual(ex: XtnException) {
+        if (target != null) {
+            if (ex.code === XtnErrorCode.MISSING_COLON || ex.code === XtnErrorCode.OBJECT_KEYS_CANNOT_BE_REPEATED) {
+                if (!firstException) firstException = ex;
+                return;
+            }
+            if (firstException) throw firstException;
+        }
+        throw ex;
+    }
+    function raise_error(code: XtnErrorCode, msg: string, colStart: number, colEnd: number) {
+        raise_error_actual(new XtnException(code, i, colStart, colEnd, msg, target));
     }
     let keyLineNo = i;
-    function raise_key_error(code: XtnErrorCode, msg: string, length: number): never {
-        throw new XtnException(code, keyLineNo, leftColStart, leftColStart + length, msg);
+    function raise_key_error(code: XtnErrorCode, msg: string, length: number) {
+        raise_error_actual(new XtnException(code, keyLineNo, leftColStart, leftColStart + length, msg, target));
     }
     for (orig_line of lines) {
         i++;
@@ -436,13 +507,10 @@ function _loadFromLines(lines: string[], target: XtnObject | null): Record<strin
             if (act_indent_len < exp_indent_len) {
                 if (line.startsWith('----') && line.substring(4).trimEnd().length === 0) {
                     if (act_indent_len == state.indent.length) {
-                        const child_target = state.parent_state.set(state.name, trimEndOfLine(state.text), raise_key_error, false);
-                        if (child_target != null) {
-                            child_target.startLineNo = state.start_line;
+                        state.setter(trimEndOfLine(state.text));
+                        const child_target = state.target;
+                        if (child_target != null)
                             child_target.endLineNo = i;
-                            (child_target as XtnText).force_multiline = true;
-                            attach_comments(child_target);
-                        }
                         stack.pop();
                         continue;
                     }
@@ -453,6 +521,7 @@ function _loadFromLines(lines: string[], target: XtnObject | null): Record<strin
                 }
             }
             state.text += line;
+            state.setter(state.text);
         }
         else {
             line = line.trim();
@@ -525,9 +594,17 @@ function _loadFromLines(lines: string[], target: XtnObject | null): Record<strin
                         raise_error(XtnErrorCode.MULTILINE_MUST_BE_ON_NEW_LINE, 'A multiline value must start on a new line', colEnd - right.length, colEnd);
                     }
                     keyLineNo = i;
-                    stack.push(new _MultilineState(i, orig_line.indexOf(left[0]), name, state, indent));
+                    const setter = [null] as unknown as [(v: string) => void];
+                    const child_target = state.set(name, '', raise_key_error, setter) as XtnText | null;
+                    if (child_target) {
+                        child_target.startLineNo = i;
+                        child_target.force_multiline = true;
+                    }
+                    attach_comments(child_target);
+                    stack.push(new _MultilineState(i, orig_line.indexOf(left[0]), child_target, setter[0], indent));
                 }
                 else {
+                    keyLineNo = i;
                     const child_target = state.set(left, right, raise_key_error);
                     if (child_target) child_target.startLineNo = i;
                     attach_comments(child_target);
@@ -565,6 +642,8 @@ function _loadFromLines(lines: string[], target: XtnObject | null): Record<strin
     if (stack.length > 1) {
         raise_error(XtnErrorCode.MISSING_CLOSE_MARKER, 'A close marker ---- was expected', 0, 1);
     }
+    if (firstException)
+        throw firstException;
     return top_level;
 }
 

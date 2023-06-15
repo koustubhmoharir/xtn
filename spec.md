@@ -75,6 +75,30 @@ The newline on the line immediately above the closing line is not part of the te
 
 Complex text values may appear in key value pairs or in array elements.
 
+## 'Attachment' of comments
+Comment lines are normally attached to the first non-comment line downward in the document. However, a comment that starts with #### is attached upwards along with any comment lines in between itself and the non-comment line above it. If there is no non-comment line in the direction of attachment, the comment line applies to the document as a whole, along with other comment lines in the same direction.
+```
+# This comment applies to the whole document
+####
+# This comment too
+####
+# This comment describes the line below
+key1: value1
+# This comment describes the line above
+####
+# This comment describes the line below
+key2{}:
+    # This comment describes the line above
+    ####
+    # This comment describes the line below
+    key3: value 3
+    # This comment describes the line below
+----
+# This comment describes the line above
+####
+# This comment applies to the whole document
+```
+
 ## Extensions via comments
 
 A comment starting with ## is considered a "special" comment. The first word after the ## is considered part of the special syntax. It is recommended to not have a space between the ## and the first word after it. The significance of special comments is application defined. This specification merely standardizes a way to add metadata via comments.

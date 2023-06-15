@@ -1,0 +1,79 @@
+# inner top of root object
+# same
+#### 
+
+# above key1
+key1: value1
+# below key1
+#### because of this
+
+# This is a comment above key2
+#This is a comment (same as above)
+key2{}:
+    # inner top of key2
+    ####
+    # for key3 (above)
+    key3: value3
+    # also for key3 (below)
+    ####
+    # for key4 (above)
+    key4[]:
+        # inner top of key4
+        ####
+        # for value41 (above)
+        +: value41
+        # for value41 (below)
+        ####
+        # for value42
+        +: value42
+        # for value42 (below)
+        ####
+        # inner bottom of key4
+    ----
+    key5{}:
+        # for key6
+        key6: value6
+        # inner bottom of key5
+    ----
+    # for key5 (below)
+    ####
+    # for key7
+    key7'':
+        value7 a
+        value7 b
+    ----
+    # for key7 (below)
+    ####
+    key8[]:
+        +{}:
+            key9: value91
+            key10: value101
+        ----
+        +{}:
+            key9: value92
+            key10: value102
+        ----
+        +{}:
+            # inner top
+            ####
+            # inner bottom
+        ----
+        +{}:
+            # inner bottom
+        ----
+        +[]:
+            +: value111
+            +: value112
+            +: value113
+        ----
+        # for last child of key8
+        ####
+        # also for last child of key8
+        ####
+    ----
+----
+# below key2
+####
+
+##meta This is a special comment (inner bottom of root object)
+## meta This is the same as above (still a special comment)

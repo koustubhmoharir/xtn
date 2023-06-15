@@ -19,9 +19,10 @@ import {
 } from 'vscode-languageserver/node';
 
 import {
+    Position,
     TextDocument, TextEdit
 } from 'vscode-languageserver-textdocument';
-import { XtnArray, XtnComment, XtnDataElement, XtnElement, XtnException, XtnObject, XtnText, breakIntoLines, convert_key, convert_simple_value } from './parser';
+import { XtnArray, XtnComment, XtnDataElement, XtnElement, XtnErrorCode, XtnException, XtnObject, XtnText, breakIntoLines, convert_key, convert_simple_value, partition, trimEndOfLine } from './parser';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -56,12 +57,14 @@ connection.onInitialize((params: InitializeParams) => {
             textDocumentSync: TextDocumentSyncKind.Incremental,
             // Tell the client that this server supports code completion.
             completionProvider: {
+                triggerCharacters: ['{', '[', "'", ':', '+'],
                 resolveProvider: true
             },
             foldingRangeProvider: true,
             documentFormattingProvider: true,
             documentOnTypeFormattingProvider: {
-                firstTriggerCharacter: '----'
+                firstTriggerCharacter: '-',
+                moreTriggerCharacter: [':', '\n']
             },
             documentRangeFormattingProvider: true
         }
@@ -102,7 +105,14 @@ let globalSettings: ExampleSettings = defaultSettings;
 // Cache the settings of all open documents
 const documentSettings: Map<string, Thenable<ExampleSettings>> = new Map();
 
-const parseCache: Map<string, { version: number; lines?: string[]; obj?: XtnObject; error?: XtnException }> = new Map();
+interface ParsedDocument {
+    version: number;
+    lines?: string[];
+    obj?: XtnObject;
+    error?: XtnException;
+}
+
+const parseCache: Map<string, ParsedDocument> = new Map();
 function getParsedDocument(uri: string, doc?: TextDocument) {
     let entry = parseCache.get(uri);
     if (!doc) return entry;
@@ -225,24 +235,222 @@ connection.onDidChangeWatchedFiles(_change => {
     connection.console.log('We received an file change event');
 });
 
+
+interface ObjScope {
+    scopeType: "object";
+    scope: XtnObject;
+    key: string | null;
+}
+
+interface ArrScope {
+    scopeType: "array";
+    scope: XtnArray;
+    key: number | null;
+}
+
+type LineType = "comment" | "complex" | "object" | "array" | "key" | "end";
+
+interface PositionContext {
+    scopes: (ObjScope | ArrScope)[];
+    line: string;
+    lineType: LineType;
+}
+
+function _getContextInner(scope: ObjScope | ArrScope, el: XtnDataElement, lineNo: number, line: string, scopes: (ObjScope | ArrScope)[]): PositionContext | undefined {
+    if (lineNo === el.startLineNo) {
+        scopes.push(scope);
+        return ({ lineType: "key", scopes, line });
+    }
+    if (lineNo === el.endLineNo) {
+        scopes.push(scope);
+        return ({ lineType: "end", scopes, line });
+    }
+    if (lineNo < el.startLineNo!) {
+        scopes.push({...scope, key: null});
+        return ({ lineType: line.trimStart().startsWith('#') ? "comment" : scope.scopeType, scopes, line });
+    }
+    const effEndLineNo = el.endLineNo ?? (el instanceof XtnArray || el instanceof XtnObject || (el instanceof XtnText && el.force_multiline) ? lineNo + 1 : -1);
+    if (lineNo < effEndLineNo) {
+        scopes.push(scope);
+        if (el instanceof XtnArray || el instanceof XtnObject) {
+            return _getContextOuter(el, lineNo, line, scopes);
+        }
+        return ({ lineType: "complex", scopes, line })
+    }
+}
+
+function _getContextOuter(obj: XtnObject | XtnArray, lineNo: number, line: string, scopes: (ObjScope | ArrScope)[]): PositionContext {
+    if (obj instanceof XtnArray) {
+        let i = -1;
+        for (const el of obj.elements) {
+            ++i;
+            const result = _getContextInner({ scopeType: "array", scope: obj, key: i }, el, lineNo, line, scopes);
+            if (result) return result;
+        }
+        scopes.push({ scopeType: "array", scope: obj, key: null });
+    }
+    else {
+        for (const k in obj.elements) {
+            const el = obj.elements[k];
+            const result = _getContextInner({ scopeType: "object", scope: obj, key: k }, el, lineNo, line, scopes);
+            if (result) return result;
+        }
+        scopes.push({ scopeType: "object", scope: obj, key: null });
+    }
+    return ({ lineType: line.trimStart().startsWith('#') ? "comment" : scopes[scopes.length - 1].scopeType, scopes, line });
+}
+
+
+function completeSyntax(item: string, p: TextDocumentPositionParams, offsetStart: number, offsetEnd: number, indent: string): CompletionItem {
+    return {
+        label: item,
+        kind: CompletionItemKind.Text,
+        textEdit: {
+            newText: item,
+            range: {
+                start: { line: p.position.line, character: p.position.character + offsetStart },
+                end: { line: p.position.line, character: p.position.character + offsetEnd }
+            }
+        },
+        additionalTextEdits: item === ': ' || item === '+: ' ? undefined : [
+            { newText: indent + '----\n', range: { start: { line: p.position.line + 1, character: 0 }, end: { line: p.position.line + 1, character: 0 } } }
+        ]
+    };
+}
+
+function getContext(pd: ParsedDocument | undefined, p: Position) {
+    if (!pd?.lines || p.line >= pd.lines.length) return;
+    if (pd.error && p.line > pd.error.line_no) return;
+    const line = pd.lines[p.line];
+    const obj = pd.obj ?? pd.error?.obj;
+    if (!obj) return;
+    return _getContextOuter(obj, p.line, line, []);
+}
+
+function analyzeLine(line: string) {
+    const [left, sep, right] = partition(line, ':');
+    let key = left.trim();
+    let keyType = "";
+    let open = false;
+    if (key.endsWith('[]')) {
+        keyType = "[";
+    }
+    else if (key.endsWith('[')) {
+        keyType = "[";
+        open = true;
+    }
+    else if (key.endsWith('{}')) {
+        keyType = "{";
+    }
+    else if (key.endsWith('{')) {
+        keyType = "{";
+        open = true;
+    }
+    else if (key.endsWith("''")) {
+        keyType = "'";
+    }
+    else if (key.endsWith("'")) {
+        keyType = "'";
+        open = true;
+    }
+    let keyTypeOpenChar = -1;
+    let keyChar = key.length > 0 ? line.indexOf(key[0]) : -1;
+    const indent = key.length > 0 ? line.substring(0, keyChar) : trimEndOfLine(left);
+    if (keyType !== "") {
+        keyTypeOpenChar = keyChar + key.length - (open ? 1 : 2);
+        key = key.substring(0, key.length - (open ? 1 : 2)).trimEnd();
+        if (key.length === 0)
+            keyChar = -1;
+    }
+    return ({
+        key,
+        keyType,
+        open,
+        keyChar,
+        keyTypeOpenChar,
+        colonChar: sep.length ? line.indexOf(sep) : -1,
+        indent,
+        right
+    })
+}
+
 // This handler provides the initial list of the completion items.
 connection.onCompletion(
-    (_textDocumentPosition: TextDocumentPositionParams): CompletionItem[] => {
-        // The pass parameter contains the position of the text document in
-        // which code complete got requested. For the example we ignore this
-        // info and always provide the same completion items.
-        return [
-            {
-                label: 'TypeScript',
-                kind: CompletionItemKind.Text,
-                data: 1
-            },
-            {
-                label: 'JavaScript',
-                kind: CompletionItemKind.Text,
-                data: 2
+    (p: TextDocumentPositionParams): CompletionItem[] | null => {
+        const entry = getParsedDocument(p.textDocument.uri);
+        const context = getContext(entry, p.position);
+        if (!context) return null;
+        const { line, lineType, scopes } = context;
+        const scope = scopes[scopes.length - 1];
+        if (lineType === "end" || lineType === "complex" || lineType === "comment")
+            return null;
+        const props = analyzeLine(line);
+        const c = p.position.character;
+        if (lineType === "key") {
+            if (props.colonChar < 0) {
+                console.error("lineType of key does not agree with colon not found on line");
+                return null;
             }
-        ];
+            // Key suggestions
+            if (c < props.colonChar) {
+                // Suggest key that will replace everything to the left of colon
+                // However, if keyType is changed, other adjustments will need to be made
+                // To avoid dealing with this, the suggestions could be filtered to not change the keyType
+            }
+            // Syntax suggestions
+            if (c === props.colonChar + 1) {
+                if (props.keyType === '' && props.right.trim().length === 0) {
+                    // Do this only if we don't have type information
+                    return [
+                        completeSyntax(': ', p, -1, 0, props.indent),
+                        completeSyntax('{}:', p, -1, 0, props.indent),
+                        completeSyntax('[]:', p, -1, 0, props.indent),
+                        completeSyntax("'':", p, -1, 0, props.indent),
+                    ]
+                }
+            }
+        }
+        if (lineType === "object") {
+            // Key suggestions
+            if (props.keyType === '') {
+                // Suggest key that will replace entire line
+            }
+            else if (c < props.keyTypeOpenChar) {
+                // Suggest key that will replace entire line
+            }
+        }
+        if (lineType === "array") {
+            if (props.keyType === '') {
+                // Filter based on possible types within array
+                if (props.keyChar < 0) {
+                    return [
+                        completeSyntax('+: ', p, 0, 0, props.indent),
+                        completeSyntax('+{}:', p, 0, 0, props.indent),
+                        completeSyntax('+[]:', p, 0, 0, props.indent),
+                        completeSyntax("+'':", p, 0, 0, props.indent),
+                    ];
+                }
+                else if (c > props.keyChar) {
+                    return [
+                        completeSyntax(': ', p, 0, 0, props.indent),
+                        completeSyntax('{}:', p, 0, 0, props.indent),
+                        completeSyntax('[]:', p, 0, 0, props.indent),
+                        completeSyntax("'':", p, 0, 0, props.indent),
+                    ];
+                }
+            }
+        }
+
+        if (lineType === 'object' || lineType === 'array') {
+            // Syntax suggestions
+            if (props.keyTypeOpenChar >= 0) {
+                if (c === props.keyTypeOpenChar + 1)
+                    return [completeSyntax(props.keyType === '[' ? '[]:' : props.keyType === '{' ? '{}:' : "'':", p, -1, props.open ? 0 : 1, props.indent)]
+                if (c === props.keyTypeOpenChar + 2 && !props.open)
+                    return [completeSyntax(props.keyType === '[' ? '[]:' : props.keyType === '{' ? '{}:' : "'':", p, -2, 0, props.indent)]
+            }
+        }
+        return null;
     }
 );
 
@@ -282,10 +490,11 @@ function appendFoldingRanges(el: XtnElement, ranges: FoldingRange[]) {
 
 connection.onFoldingRanges((p: FoldingRangeParams) => {
     const entry = getParsedDocument(p.textDocument.uri);
-    if (!entry || entry.error || !entry.obj) return null;
+    const obj = entry?.obj ?? entry?.error?.obj;
+    if (!obj) return null;
 
     let ranges: FoldingRange[] = [];
-    appendFoldingRanges(entry.obj, ranges);
+    appendFoldingRanges(obj, ranges);
     return ranges;
 });
 
@@ -507,8 +716,8 @@ function formatComments(comments: XtnComment[], lines: string[], expIndent: stri
 
 function appendFormatEdits(key: string, el: XtnDataElement, lines: string[], edits: TextEdit[], indent: string | null) {
     const expIndent = indent == null ? '' : indent;
-    if (el.comments?.length) {
-        formatComments(el.comments, lines, expIndent, edits);
+    if (el.comments_above?.length) {
+        formatComments(el.comments_above, lines, expIndent, edits);
     }
     if (el instanceof XtnObject) {
         formatStartOrEndLine(el.startLineNo, lines, key[0], expIndent, edits);
@@ -516,8 +725,8 @@ function appendFormatEdits(key: string, el: XtnDataElement, lines: string[], edi
         for (const key in el.elements) {
             appendFormatEdits(key, el.elements[key], lines, edits, childIndent);
         }
-        if (el.trail_comments?.length) {
-            formatComments(el.trail_comments, lines, childIndent, edits);
+        if (el.comments_below?.length) {
+            formatComments(el.comments_below, lines, childIndent, edits);
         }
         formatStartOrEndLine(el.endLineNo, lines, '-', expIndent, edits);
     }
@@ -527,8 +736,8 @@ function appendFormatEdits(key: string, el: XtnDataElement, lines: string[], edi
         for (const ch of el.elements) {
             appendFormatEdits("+", ch, lines, edits, childIndent);
         }
-        if (el.trail_comments?.length) {
-            formatComments(el.trail_comments, lines, childIndent, edits);
+        if (el.comments_below?.length) {
+            formatComments(el.comments_below, lines, childIndent, edits);
         }
         formatStartOrEndLine(el.endLineNo, lines, '-', expIndent, edits);
     }
@@ -548,7 +757,67 @@ connection.onDocumentFormatting((p: DocumentFormattingParams) => {
     return edits;
 })
 
+function getIndentLength(lines: string[], element: XtnDataElement, isRoot: boolean) {
+    if (isRoot) return 0;
+    if (element.startLineNo != null) {
+        const startLine = lines![element.startLineNo];
+        return startLine.length - startLine.trimStart().length + 4;
+    }
+}
+
+function indentCurrentLine(pd: ParsedDocument, element: XtnDataElement, isRoot: boolean, line: number, actIndent: number, attemptAutoClose: boolean) {
+    const indentLen = getIndentLength(pd.lines!, element, isRoot);
+    if (indentLen != null) {
+        const edits: TextEdit[] = [];
+        if (actIndent < indentLen)
+            edits.push({ newText: ' '.repeat(indentLen - actIndent), range: { start: { line, character: 0 }, end: { line, character: 0 } } });
+        else if (actIndent > indentLen)
+            edits.push({ newText: '', range: { start: { line, character: 0 }, end: { line, character: actIndent - indentLen } } });
+        if (attemptAutoClose && shouldAutoClose(pd, line)) {
+            edits.push({ newText: ' '.repeat(indentLen) + '----\n', range: { start: { line: line + 1, character: 0 }, end: { line: line + 1, character: 0 } } });
+        }
+        return edits;
+    }
+}
+
+function shouldAutoClose(pd: ParsedDocument, lineNo: number) {
+    if (!pd.error || !pd.lines) return false;
+    const lines = pd.lines.slice();
+    lines[lineNo] = '\n';
+    try {
+        XtnObject.load(lines);
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+
 connection.onDocumentOnTypeFormatting((p: DocumentOnTypeFormattingParams) => {
+    const entry = getParsedDocument(p.textDocument.uri);
+    const context = getContext(entry, p.position);
+    if (!context) return null;
+    const { line, lineType, scopes } = context;
+    const scope = scopes[scopes.length - 1];
+    let parent = scope.scope;
+    const isRoot = scopes.length === 1;
+    if (p.ch === '\n' && line.substring(0, p.position.character).trimStart().length === 0) {
+        if (lineType === "array" || lineType === "object" || lineType === "complex") {
+            if (lineType === "complex")
+                parent = (parent.elements as any)[scope.key!];
+            const edits = indentCurrentLine(entry!, parent, isRoot, p.position.line, p.position.character, false);
+            if (edits) return edits;
+        }
+    }
+    if (p.ch === ':') {
+        const props = analyzeLine(line);
+        if (lineType === "key" && p.position.character === props.colonChar + 1) {
+            const edits = indentCurrentLine(entry!, parent, isRoot, p.position.line, props.indent.length, true);
+            if (edits) return edits;
+        }
+    }
+    // if (lineType === "end" || lineType === "complex" || lineType === "comment")
+    //     return null;
     return [];
 })
 
