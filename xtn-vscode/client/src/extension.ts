@@ -48,6 +48,9 @@ export function activate(context: ExtensionContext) {
     client.start();
 }
 
+// Look at the link below to figure out how to create an extension that works in the browser too.
+// https://www.hiro.so/blog/write-clarity-smart-contracts-with-zero-installations-how-we-built-an-in-browser-language-server-using-wasm
+
 export function deactivate(): Thenable<void> | undefined {
     if (!client) {
         return undefined;

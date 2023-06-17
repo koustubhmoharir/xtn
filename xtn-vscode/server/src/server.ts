@@ -15,7 +15,9 @@ import {
     FoldingRange,
     DocumentFormattingParams,
     DocumentOnTypeFormattingParams,
-    DocumentRangeFormattingParams
+    DocumentRangeFormattingParams,
+    InsertTextFormat,
+    InsertTextMode
 } from 'vscode-languageserver/node';
 
 import {
@@ -302,19 +304,19 @@ function _getContextOuter(obj: XtnObject | XtnArray, lineNo: number, line: strin
 
 
 function completeSyntax(item: string, p: TextDocumentPositionParams, offsetStart: number, offsetEnd: number, indent: string): CompletionItem {
+
     return {
         label: item,
-        kind: CompletionItemKind.Text,
+        kind: CompletionItemKind.Snippet,
         textEdit: {
-            newText: item,
+            newText: item + (item === ':' || item === '+:' ? ' $0' : `\n${indent}    $0\n${indent}----`),
             range: {
                 start: { line: p.position.line, character: p.position.character + offsetStart },
                 end: { line: p.position.line, character: p.position.character + offsetEnd }
             }
         },
-        additionalTextEdits: item === ': ' || item === '+: ' ? undefined : [
-            { newText: indent + '----\n', range: { start: { line: p.position.line + 1, character: 0 }, end: { line: p.position.line + 1, character: 0 } } }
-        ]
+        insertTextFormat: InsertTextFormat.Snippet,
+        insertTextMode: InsertTextMode.asIs
     };
 }
 
@@ -402,7 +404,7 @@ connection.onCompletion(
                 if (props.keyType === '' && props.right.trim().length === 0) {
                     // Do this only if we don't have type information
                     return [
-                        completeSyntax(': ', p, -1, 0, props.indent),
+                        completeSyntax(':', p, -1, 0, props.indent),
                         completeSyntax('{}:', p, -1, 0, props.indent),
                         completeSyntax('[]:', p, -1, 0, props.indent),
                         completeSyntax("'':", p, -1, 0, props.indent),
@@ -424,7 +426,7 @@ connection.onCompletion(
                 // Filter based on possible types within array
                 if (props.keyChar < 0) {
                     return [
-                        completeSyntax('+: ', p, 0, 0, props.indent),
+                        completeSyntax('+:', p, 0, 0, props.indent),
                         completeSyntax('+{}:', p, 0, 0, props.indent),
                         completeSyntax('+[]:', p, 0, 0, props.indent),
                         completeSyntax("+'':", p, 0, 0, props.indent),
@@ -432,7 +434,7 @@ connection.onCompletion(
                 }
                 else if (c > props.keyChar) {
                     return [
-                        completeSyntax(': ', p, 0, 0, props.indent),
+                        completeSyntax(':', p, 0, 0, props.indent),
                         completeSyntax('{}:', p, 0, 0, props.indent),
                         completeSyntax('[]:', p, 0, 0, props.indent),
                         completeSyntax("'':", p, 0, 0, props.indent),

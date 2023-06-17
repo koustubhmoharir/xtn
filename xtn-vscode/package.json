@@ -7,7 +7,7 @@
   },
   "displayName": "xtn",
   "description": "Language Support for the XTN format",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "engines": {
     "vscode": "^1.75.0"
   },
@@ -16,17 +16,26 @@
     "Programming Languages"
   ],
   "contributes": {
-    "languages": [{
-      "id": "xtn",
-      "aliases": ["xtn", "xtn"],
-      "extensions": [".xtn"],
-      "configuration": "./language-configuration.json"
-    }],
-    "grammars": [{
-      "language": "xtn",
-      "scopeName": "source.xtn",
-      "path": "./syntaxes/xtn.tmLanguage.json"
-    }]
+    "languages": [
+      {
+        "id": "xtn",
+        "aliases": [
+          "xtn",
+          "xtn"
+        ],
+        "extensions": [
+          ".xtn"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "xtn",
+        "scopeName": "source.xtn",
+        "path": "./syntaxes/xtn.tmLanguage.json"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
