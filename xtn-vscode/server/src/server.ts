@@ -299,7 +299,7 @@ function _getContextOuter(obj: XtnObject | XtnArray, lineNo: number, line: strin
         }
         scopes.push({ scopeType: "object", scope: obj, key: null });
     }
-    return ({ lineType: line.trimStart().startsWith('#') ? "comment" : scopes[scopes.length - 1].scopeType, scopes, line });
+    return ({ lineType: (line ?? '').trimStart().startsWith('#') ? "comment" : scopes[scopes.length - 1].scopeType, scopes, line });
 }
 
 
@@ -767,7 +767,7 @@ function getIndentLength(lines: string[], element: XtnDataElement, isRoot: boole
     }
 }
 
-function indentCurrentLine(pd: ParsedDocument, element: XtnDataElement, isRoot: boolean, line: number, actIndent: number, attemptAutoClose: boolean) {
+function indentCurrentLine(pd: ParsedDocument, element: XtnDataElement, isRoot: boolean, line: number, actIndent: number, currentChar: number, attemptAutoClose: boolean) {
     const indentLen = getIndentLength(pd.lines!, element, isRoot);
     if (indentLen != null) {
         const edits: TextEdit[] = [];
@@ -776,7 +776,14 @@ function indentCurrentLine(pd: ParsedDocument, element: XtnDataElement, isRoot: 
         else if (actIndent > indentLen)
             edits.push({ newText: '', range: { start: { line, character: 0 }, end: { line, character: actIndent - indentLen } } });
         if (attemptAutoClose && shouldAutoClose(pd, line)) {
-            edits.push({ newText: ' '.repeat(indentLen) + '----\n', range: { start: { line: line + 1, character: 0 }, end: { line: line + 1, character: 0 } } });
+            if (line < pd.lines!.length - 1) {
+                edits.push({ newText: '\n' + ' '.repeat(indentLen + 4), range: { start: { line: line, character: currentChar }, end: { line: line, character: currentChar } } });
+                edits.push({ newText: ' '.repeat(indentLen) + '----\n', range: { start: { line: line + 1, character: 0 }, end: { line: line + 1, character: 0 } } });
+            }
+            else {
+                const character = currentChar + indentLen - actIndent;
+                edits.push({ newText: '$$vscodesnippet$$\n    $0\n----\n', range: { start: { line, character }, end: { line, character } } });
+            }
         }
         return edits;
     }
@@ -807,14 +814,15 @@ connection.onDocumentOnTypeFormatting((p: DocumentOnTypeFormattingParams) => {
         if (lineType === "array" || lineType === "object" || lineType === "complex") {
             if (lineType === "complex")
                 parent = (parent.elements as any)[scope.key!];
-            const edits = indentCurrentLine(entry!, parent, isRoot, p.position.line, p.position.character, false);
+            const edits = indentCurrentLine(entry!, parent, isRoot, p.position.line, p.position.character, p.position.character, false);
             if (edits) return edits;
         }
+        
     }
     if (p.ch === ':') {
         const props = analyzeLine(line);
         if (lineType === "key" && p.position.character === props.colonChar + 1) {
-            const edits = indentCurrentLine(entry!, parent, isRoot, p.position.line, props.indent.length, true);
+            const edits = indentCurrentLine(entry!, parent, isRoot, p.position.line, props.indent.length, p.position.character, true);
             if (edits) return edits;
         }
     }
