@@ -4,7 +4,12 @@
         "key3": "value3",
         "key4": [
             "value41",
-            "value42"
+            "value42",
+			true,
+			false,
+			null,
+			1234,
+			1.23e12
         ],
         "key5": {
             "key6": "value6"
@@ -25,5 +30,10 @@
                 "value113"
             ]
         ]
-    }
+    },
+	"key9": true,
+	"key10": false,
+	"key11": null,
+	"key12": 1234,
+	"key13": -1.23e12
 }

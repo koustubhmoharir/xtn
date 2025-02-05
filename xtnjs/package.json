@@ -1,0 +1,35 @@
+{
+  "name": "xtn",
+  "version": "0.4.0",
+  "description": "Implementation of the XTN format",
+  "author": "Koustubh Moharir",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "import": "./dist/index.js",
+      "default": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "lint": "tsc",
+    "test": "vitest run",
+    "ci": "npm run build && npm run check-exports && npm run lint && npm run test",
+    "check-exports": "attw --pack ."
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.17.3",
+    "@types/lodash": "^4.17.15",
+    "@types/node": "^22.13.1",
+    "lodash": "^4.17.21",
+    "tsup": "^8.3.6",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.4"
+  }
+}

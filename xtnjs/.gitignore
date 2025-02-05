@@ -1,0 +1,5 @@
+/dist
+/_cache
+*.d.ts
+*.d.ts.map
+node_modules/

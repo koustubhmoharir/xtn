@@ -1,50 +1,50 @@
-key1'':
+key1 :"""
     a
-    -----
-----
+    """"
+"""
 
-key2'':
+key2 :"""
     a
       b
     c
 
-----
+"""
 
-key3'':
-----
+key3 :"""
+"""
 
-key4[]:
-    +'':
+key4 :[
+    """
         a
-        -----
-    ----
+        """"
+    """
     
-    +'':
+    """
         a
           b
         c
   
-    ----
+    """
     
-    +'':
-    ----
+    """
+    """
 
-    +'':
+    """
         sdfa
-        ----
-    ----
+        """
+    """
 
-    # contains tabs
-    +'':
+    // contains tabs
+    """
         	Some lines start with a tab
         no tab here
         	starts with a tab and also ends with it	
         All tabs must be retained and no error should be reported
-    ----    
-----
+    """    
+]
 
-key5'':
+key5 :"""
     	Some lines start with a tab
     no tab here
     	starts with a tab and also ends with it	
-----
+"""
