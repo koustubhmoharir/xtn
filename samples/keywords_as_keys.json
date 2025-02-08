@@ -1,0 +1,12 @@
+{
+    "true": "a",
+    "false": "a",
+    "null": "a",
+    "nan": "a",
+    "infinity": "a",
+    "-true": "a",
+    "-false": "a",
+    "-null": "a",
+    "-nan": "a",
+    "-infinity": "a"
+}

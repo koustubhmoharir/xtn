@@ -221,7 +221,7 @@ class XtnIntegerImpl extends XtnPrimitiveImpl<bigint | null> implements XtnInteg
     }
 
     _data(env: XtnEnvironment | undefined): bigint | number | null {
-        if (env?.integerType === "bigint")
+        if (env?.integerType === "bigint" || this.value === null)
             return this.value;
         return Number(this.value);
     }
@@ -428,8 +428,111 @@ class XtnObjectImpl extends XtnValueOrPairListImpl implements XtnObject {
 }
 
 function parseJson5String(str: string) {
-    // TODO: implement logic as per JSON5
-    return JSON.parse(str);
+    const cps = [];
+    let escape = 0;
+    let escdCR = false;
+    let hex = 0n;
+    for (const c of str.substring(1, str.length - 1)) {
+        if (escape !== 0) {
+            if (escape === 1) {
+                escdCR = false;
+                switch (c) {
+                    case '\\':
+                        cps.push('\\');
+                        break;
+                    case '\r':
+                        escdCR = true;
+                        break;
+                    case '\n':
+                        break;
+                    case '\u2028':
+                    case '\u2029':
+                        break;
+                    case '"':
+                    case "'":
+                        cps.push(c);
+                        break;
+                    case 'b':
+                        cps.push('\b');
+                        break;
+                    case 'f':
+                        cps.push('\f');
+                        break;
+                    case 'n':
+                        cps.push('\n');
+                        break;
+                    case 'r':
+                        cps.push('\r');
+                        break;
+                    case 't':
+                        cps.push('\t');
+                        break;
+                    case 'v':
+                        cps.push('\v');
+                        break;
+                    case '0':
+                        cps.push('\0');
+                        break;
+                    case 'x':
+                        hex = 0n;
+                        escape = -1;
+                        break;
+                    case 'u':
+                        hex = 0n;
+                        escape = -3;
+                        break;
+                    default:
+                        if (isAsciiNumber(c)) {
+                            // error
+                        }
+                        else {
+                            cps.push(c);
+                        }
+                        break;
+                }
+                --escape;
+            }
+            else {
+                const h = hexDigit(c);
+                if (h === null) {
+                    //error
+                    escape = 0;
+                }
+                else {
+                    hex = hex * 16n + h;
+                    ++escape;
+                    if (escape === 0) {
+                        cps.push(String.fromCodePoint(Number(hex)));
+                    }
+                }
+            }
+        }
+        else if (c === '\n') {
+            if (escdCR) {
+                escdCR = false;
+            }
+            else {
+                // error: LF cannot appear without escaping
+            }
+        }
+        else {
+            escdCR = false;
+            if (c === '\\') {
+                escape = 1;
+            }
+            else if (c == '\r') {
+                // error: CR cannot appear without escaping
+            }
+            else {
+                cps.push(c);
+            }
+        }
+    }
+    return cps.join('');
+}
+
+function isStartOfNumber(char: string, next: string) {
+    return ('-+.'.indexOf(char) >= 0 && isAsciiNumber(next)) || isAsciiNumber(char);
 }
 
 function isAsciiNumber(char: string) {
@@ -458,6 +561,17 @@ function isAsciiLetter(char: string) {
     const cn = char.codePointAt(0)!;
     //a-z or A-Z
     return (cn >= 65 && cn <= 90) || (cn >= 97 && cn <= 122);
+}
+
+function isKeyStartLetter(char: string) {
+    const cn = char.codePointAt(0)!;
+    //a-z or A-Z or - or _
+    return (cn >= 65 && cn <= 90) || (cn >= 97 && cn <= 122) || cn === 45 || cn === 95;
+}
+function isKeyLetter(char: string) {
+    const cn = char.codePointAt(0)!;
+    // 0-9 or a-z or A-Z or - or _
+    return (cn >= 48 && cn <= 57) || (cn >= 65 && cn <= 90) || (cn >= 97 && cn <= 122) || cn === 45 || cn === 95;
 }
 
 class Parser {
@@ -489,9 +603,44 @@ class Parser {
     private parentsStack: (XtnArrayImpl | XtnValueOrPairListImpl | XtnKeyValuePairImpl)[];
     private getCurrentParent() { return this.parentsStack[this.parentsStack.length - 1]!; }
 
+    private interpretAndCompleteValue(value: XtnKeyImpl) {
+        const text = value.name;
+        const upper = text.toUpperCase();
+        let lit;
+        switch (upper) {
+            case 'TRUE':
+                lit = new XtnBooleanImpl(true, text, false, undefined, {}, {});
+                break;
+            case 'FALSE':
+                lit = new XtnBooleanImpl(false, text, false, undefined, {}, {});
+                break;
+            case 'NULL':
+                lit = new XtnNullImpl(text, {}, {});
+                break;
+            case 'INFINITY':
+                lit = new XtnRealNumberImpl(Number.POSITIVE_INFINITY, text, false, undefined, {}, {});
+                break;
+            case '-INFINITY':
+                lit = new XtnRealNumberImpl(Number.NEGATIVE_INFINITY, text, false, undefined, {}, {});
+                break;
+            case 'NAN':
+                lit = new XtnRealNumberImpl(Number.NaN, text, false, undefined, {}, {});
+                break;
+            case '-NAN':
+                lit = new XtnRealNumberImpl(-Number.NaN, text, false, undefined, {}, {});
+                break;
+        }
+        if (lit) {
+            this.completeValue(lit);
+        }
+        else {
+            // error
+        }
+    }
     private completeValue(value: XtnValueImpl) {
         const parent = this.getCurrentParent();
         if (parent instanceof XtnKeyValuePairImpl) {
+            this.popStack();
             this.parentsStack.pop();
             parent.value = value;
             const parentList = this.getCurrentParent();
@@ -517,7 +666,7 @@ class Parser {
             }
             char = next;
         }
-        this.processChar(char, '\0');
+        this.processChar(char, '\n');
         return this.rootObj;
     }
     private crlf = false;
@@ -706,9 +855,6 @@ class Parser {
     private escape = false;
     private consumeJsonString(char: string, next: string) {
         // on first entry, char is the first character after the opening "
-        if (char === '\n') {
-            // error
-        }
         if (this.escape) {
             this.escape = false;
         }
@@ -730,74 +876,38 @@ class Parser {
         return true;
     }
 
-    private startKeyValueSeparator() {
-        this.pushStack(this.consumeSeparator);
-        const keyValuePair = new XtnKeyValuePairImpl(this.rawText instanceof XtnQStringImpl ? new XtnKeyImpl(this.rawText.value, true, this.rawText.posStart, this.rawText.posEnd) : this.rawText!);
-        this.parentsStack.push(keyValuePair);
-        this.rawText = null;
-    }
-    private consumeSeparator(char: string, next: string) {
-        // on first entry, char is the first character after a colon
-        if (char.trimStart().length === 0)
-            return true;
-        this.popStack();
-        if (char === '{') {
-            this.startObject();
-        }
-        else if (char === '[') {
-            this.startArray();
-        }
-        else if (char === "`") {
-            this.startSingleLineStringValue();
-        }
-        else if (char === '"' || char === "'") {
-            this.startQuote(char, next);
-        }
-        else if (char === '%') {
-            this.startExplicitInteger(char, next);
-        }
-        else if (char === '~') {
-            this.startExplicitRealNumber();
-        }
-        else if (char === '@') {
-            this.startDateTime();
-        }
-        else if (char === '?') {
-            this.startExplicitBoolean(next);
-        }
-        else if ((char === '-' && isAsciiNumber(next)) || isAsciiNumber(char)) {
-            this.startImplicitNumber(char, next);
-        }
-        else {
-            const cn = char.codePointAt(0)!;
-            //a-z or A-Z or - or _
-            if ((cn >= 65 && cn <= 90) || (cn >= 97 && cn <= 122) || cn === 45 || cn === 95)
-                this.startUnquotedText(false);
-            else {
-                //error
-            }
-        }
-        return true;
-    }
-
     private startObject() {
         this.pushStack(this.consumeObject);
         this.parentsStack.push(new XtnObjectImpl({}, {}));
     }
     private consumeObject(char: string, next: string) {
-        return this.consumeInner(char, next, true)
+        return this.consumeInner(char, next, true);
+    }
+    private consumePairValue(char: string, next: string) {
+        return this.consumeInner(char, next, false);
     }
     private consumeInner(char: string, next: string, allowKeys: boolean) {
-        if (char === ":") {
-            this.startKeyValueSeparator();
+        if (char.trimStart().length === 0) {
+            return true;
+        }
+        if (allowKeys && char === ":") {
+            if (!this.rawText) {
+                //error
+                this.rawText = new XtnKeyImpl("", false, {}, {});
+            }
+            const keyValuePair = new XtnKeyValuePairImpl(this.rawText instanceof XtnQStringImpl ? new XtnKeyImpl(this.rawText.value, true, this.rawText.posStart, this.rawText.posEnd) : this.rawText);
+            this.parentsStack.push(keyValuePair);
+            this.rawText = null;
+            this.pushStack(this.consumePairValue);
             return true;
         }
         if (this.rawText instanceof XtnQStringImpl) {
             this.completeValue(this.rawText);
             this.rawText = null;
         }
-        if (char.trimStart().length === 0) {
-            return true;
+        else if (this.rawText instanceof XtnKeyImpl) {
+            this.interpretAndCompleteValue(this.rawText);
+            this.rawText = null;
         }
         if (char === '/' && next === '/') {
             this.startComment();
@@ -815,13 +925,13 @@ class Parser {
             this.startArray();
         }
         else if (char === "`") {
-            this.startSingleLineStringValue();
+            this.startSingleLineStringValue(char, next);
         }
         else if (char === '%') {
             this.startExplicitInteger(char, next);
         }
         else if (char === '~') {
-            this.startExplicitRealNumber();
+            this.startExplicitRealNumber(char, next);
         }
         else if (char === '@') {
             this.startDateTime();
@@ -846,14 +956,11 @@ class Parser {
         else if (char === ')') {
 
         }
-        else if ((char === '-' && isAsciiNumber(next)) || isAsciiNumber(char)) {
+        else if (isStartOfNumber(char, next)) {
             this.startImplicitNumber(char, next);
         }
-        else {
-            const cn = char.codePointAt(0)!;
-            //a-z or A-Z or - or _
-            if ((cn >= 65 && cn <= 90) || (cn >= 97 && cn <= 122) || cn === 45 || cn === 95)
-                this.startUnquotedText(allowKeys);
+        else if (isKeyStartLetter(char)) {
+            this.startUnquotedText(char, next);
         }
         return true;
     }
@@ -867,54 +974,128 @@ class Parser {
     }
 
     private numberStartPos = -1;
+    private decPtStartPos = -1;
+    private expStartPos = -1;
     private intValue = 1n;
-    private integerExplicit = false;
+    private numberType: "i" | "r" | null = null;
     private startExplicitInteger(char: string, next: string) {
         this.intValue = 1n;
         this.numberStartPos = this.pos;
-        this.integerExplicit = true;
-        this.pushStack(this.consumeLeadingIntegerWhitespace);
-        this.consumeLeadingIntegerWhitespace(char, next);
+        this.numberType = "i";
+        this.pushStack(this.consumeLeadingNumberWhitespace);
+        this.consumeLeadingNumberWhitespace(char, next);
     }
-    private consumeLeadingIntegerWhitespace(char: string, next: string) {
+    private consumeLeadingNumberWhitespace(char: string, next: string) {
         // on first entry, char is the character before the integer
         if (next.trimStart().length === 0) {
             return true;
         }
-        if (next === '-' || isAsciiNumber(next)) {
+        if (next === '-' || next === '+' || isAsciiNumber(next)) {
             this.popStack();
-            this.pushStack(this.consumePotentialMinus);
+            this.pushStack(this.consumePotentialLeadingSign);
+        }
+        else if (next === 'n' || next === 'N') {
+            this.popStack();
+            this.pushStack(this.consumeNamedNumberOrNull);
         }
         return true;
     }
-    private consumePotentialMinus(char: string, next: string) {
-        // on first entry, char is a minus sign or the first digit
+    private consumeNamedNumberOrNull(char: string, next: string) {
+        // on first entry, char is n in null
+        if (!isAsciiLetter(next)) {
+            this.popStack();
+            const text = this.document.substring(this.numberStartPos + 1, this.pos + 1).trimStart();
+            const tu = text.toUpperCase();
+            let numb;
+            if (this.numberType === "i") {
+                if (tu !== "NULL") {
+                    // error
+                }
+                numb = new XtnIntegerImpl(null, text, true, undefined, {}, {});
+            }
+            else {
+                let v;
+                switch (tu) {
+                    case "NULL":
+                        v = null;
+                        break;
+                    case "NAN":
+                    case "+NAN":
+                    case "-NAN":
+                        v = Number.NaN;
+                        break;
+                    case "+INFINITY":
+                    case "INFINITY":
+                        v = Number.POSITIVE_INFINITY;
+                        break;
+                    case "-INFINITY":
+                        v = Number.NEGATIVE_INFINITY;
+                        break;
+                    default:
+                        v = null;
+                        // error
+                        break;
+                }
+                numb = new XtnRealNumberImpl(v, text, true, undefined, {}, {});
+            }
+            this.completeValue(numb);
+        }
+        return true;
+    }
+    private consumePotentialLeadingSign(char: string, next: string) {
+        // on first entry, char is a minus or plus sign or the first digit
         this.popStack();
-        this.pushStack(this.consumeStartingIntDigits);
-        if (char === '-') {
-            this.intValue = -1n;
-            if (!isAsciiNumber(next)) {
-                // error
+        this.decPtStartPos = -1;
+        this.expStartPos = -1;
+        this.pushStack(this.consumeStartingNumberDigits);
+        const neg = char === '-';
+        if (neg || char === '+') {
+            this.intValue = neg ? -1n : 1n;
+            if (this.numberType === "i") {
+                if (!isAsciiNumber(next)) {
+                    // error
+                }
+            }
+            else {
+                if ('nNiI'.indexOf(next) >= 0) {
+                    this.popStack();
+                    this.pushStack(this.consumeNamedNumberOrNull);
+                    return true;
+                }
+                if (!(next === '.' || isAsciiNumber(next))) {
+                    // error
+                }
             }
         }
         else {
-            this.consumeStartingIntDigits(char, next);
+            this.consumeStartingNumberDigits(char, next);
         }
         return true;
     }
-    private consumeStartingIntDigits(char: string, next: string) {
-        // on first entry, char is the first digit of the integer or the 0 in 0x
+    private consumeStartingNumberDigits(char: string, next: string) {
+        // on first entry, char is the first digit of the number or the 0 in 0x
         this.popStack();
-        if (char === '0' && next === 'x' || next === 'X') {
+        if (this.numberType !== "r" && (char === '0' && next === 'x' || next === 'X')) {
             this.pushStack(this.consumeHexStart);
+        }
+        else if (this.numberType !== "i" && char === '.') {
+            this.decPtStartPos = this.pos;
+            if (next === 'e' || next === 'E') {
+                this.expStartPos = this.pos;
+            }
+            else if (!isAsciiNumber(next)) {
+                //error
+            }
+            this.pushStack(this.consumeNumber);
+            this.isLeadingZero = false;
         }
         else {
             let d = decDigit(char);
             if (d !== 0n)
                 this.intValue *= d!;
             this.isLeadingZero = char === '0';
-            this.pushStack(this.consumeInteger);
-            this.consumeInteger(char, next);
+            this.pushStack(this.consumeNumber);
+            this.consumeNumber(char, next);
         }
         return true;
     }
@@ -946,7 +1127,7 @@ class Parser {
         const h = hexDigit(next);
         if (h === null) {
             this.popStack();
-            const text = this.document.substring(this.numberStartPos + (this.integerExplicit ? 1 : 0), this.pos + 1).trimStart();
+            const text = this.document.substring(this.numberStartPos + (this.numberType === "i" ? 1 : 0), this.pos + 1).trimStart();
             if (this.isLeadingZero)
                 this.intValue = 0n;
             this.completeValue(new XtnIntegerImpl(this.intValue, text, true, undefined, {}, {}));
@@ -960,38 +1141,80 @@ class Parser {
         return true;
     }
     
-    private consumeInteger(char: string, next: string) {
-        // on first entry, char is the first digit but it has already been considered
+    private consumeNumber(char: string, next: string) {
+        // on first entry, the following cases are possible
+        // 1) char is the first digit of an integer that has already been considered or the first digit of the integer part of a real number
+        // 2) char is the first character after the decimal point of a number that has no integer part (this can be e / E or a decimal digit for the fractional part)
         if (this.isLeadingZero) {
             if (next === '0')
                 return true;
         }
         const d = decDigit(next);
         if (d === null) {
+            if (this.numberType !== "i") {
+                if (this.expStartPos < 0) {
+                    if (next === 'e' || next === 'E') {
+                        this.expStartPos = this.pos + 1;
+                        if (this.decPtStartPos < 0)
+                            this.decPtStartPos = this.expStartPos;
+                        return true;
+                    }
+                    else if (this.decPtStartPos < 0 && next === '.') {
+                        this.decPtStartPos = this.pos + 1;
+                        return true;
+                    }
+                }
+                else {
+                    if (this.expStartPos === this.pos && (next === '-' || next === '+')) {
+                        return true;
+                    }
+                }
+            }
             this.popStack();
-            const text = this.document.substring(this.numberStartPos + (this.integerExplicit ? 1 : 0), this.pos + 1).trimStart();
+            const text = this.document.substring(this.numberStartPos + (this.numberType !== null ? 1 : 0), this.pos + 1).trimStart();
             if (this.isLeadingZero)
                 this.intValue = 0n;
-            this.completeValue(new XtnIntegerImpl(this.intValue, text, true, undefined, {}, {}));
+            if (this.numberType !== "r" && this.decPtStartPos < 0 && this.expStartPos < 0)
+                this.completeValue(new XtnIntegerImpl(this.intValue, text, true, undefined, {}, {}));
+            else
+                this.completeValue(new XtnRealNumberImpl(Number(text), text, true, undefined, {}, {}));
             return true;
         }
         if (this.isLeadingZero)
             this.intValue *= d;
-        else
+        else if (this.decPtStartPos < 0)
             this.intValue = this.intValue * 10n + (this.intValue > 0 ? 1n : -1n) * d;
         this.isLeadingZero = false;
         return true;
     }
 
-    private startExplicitRealNumber() {
-
+    private startExplicitRealNumber(char: string, next: string) {
+        this.numberStartPos = this.pos;
+        this.numberType = "r";
+        this.pushStack(this.consumeLeadingRealNumberWhitespace);
+        this.consumeLeadingRealNumberWhitespace(char, next);
+    }
+    private consumeLeadingRealNumberWhitespace(char: string, next: string) {
+        // on first entry, char is the character before the number
+        if (next.trimStart().length === 0) {
+            return true;
+        }
+        if (next === '-' || next === '+' || next === '.' || isAsciiNumber(next)) {
+            this.popStack();
+            this.pushStack(this.consumePotentialLeadingSign);
+        }
+        else if ('nNiI'.indexOf(next) >= 0) {
+            this.popStack();
+            this.pushStack(this.consumeNamedNumberOrNull);
+        }
+        return true;
     }
     private startImplicitNumber(char: string, next: string) {
         this.intValue = 1n;
         this.numberStartPos = this.pos;
-        this.integerExplicit = false;
-        this.pushStack(this.consumePotentialMinus);
-        this.consumePotentialMinus(char, next);
+        this.numberType = null;
+        this.pushStack(this.consumePotentialLeadingSign);
+        this.consumePotentialLeadingSign(char, next);
     }
 
     private startDateTime() {
@@ -1030,6 +1253,8 @@ class Parser {
                 this.completeValue(new XtnBooleanImpl(true, text, true, undefined, {}, {}));
             else if (tu === "FALSE")
                 this.completeValue(new XtnBooleanImpl(false, text, true, undefined, {}, {}));
+            else if (tu === "NULL")
+                this.completeValue(new XtnBooleanImpl(null, text, true, undefined, {}, {}));
             else {
                 // error
             }
@@ -1038,16 +1263,17 @@ class Parser {
     }
 
 
-    private startSingleLineStringValue() {
+    private startSingleLineStringValue(char: string, next: string) {
         this.pushStack(this.consumeSingleLineStringValue);
         this.singleLineStringStartPos = this.pos;
+        this.consumeSingleLineStringValue(char, next);
     }
     private singleLineStringStartPos = -1;
     private consumeSingleLineStringValue(char: string, next: string) {
-        // on first entry, char is the first character after '
-        if (char === '\n') {
+        // on first entry, char is the opening `
+        if (next === '\n') {
             this.popStack();
-            const str = this.document.substring(this.singleLineStringStartPos + 1, this.pos).trim().replace(/\s/g, ' ');
+            const str = this.document.substring(this.singleLineStringStartPos + 1, this.pos + 1).trim().replace(/\s/g, ' ');
             const sStr = new XtnSStringImpl(str, undefined, {}, {});
             this.completeValue(sStr);
         }
@@ -1055,58 +1281,27 @@ class Parser {
     }
 
     private unquotedTextStartPos = -1;
-    private allowUnquotedTextToBeKey: boolean = false;
-    private startUnquotedText(allowKey: boolean) {
+    private startUnquotedText(char: string, next: string) {
         this.unquotedTextStartPos = this.pos;
-        this.canBeBoolOrNull = true;
-        this.allowUnquotedTextToBeKey = allowKey;
         this.pushStack(this.consumeUnquotedText);
+        this.consumeUnquotedText(char, next);
     }
-    private canBeBoolOrNull = false;
     private consumeUnquotedText(char: string, next: string) {
-        // on first entry, char is the second character of the unquoted text
-        if (this.allowUnquotedTextToBeKey && char === ':') {
-            this.popStack();
-            const str = this.document.substring(this.unquotedTextStartPos, this.pos).trimEnd().replace(/\s/g, ' ');
-            this.rawText = new XtnKeyImpl(str, false, {}, {});
-            this.startKeyValueSeparator();
+        // on first entry, char is the first character of the unquoted text
+        if (isKeyLetter(next))
+            return true;
+        if (next !== '\n' && next.trimStart().length === 0) {
+            return true;
         }
-        const ws = char.trimStart().length === 0;
-        if (ws || '~`!@#$%^&*()+={}[]|\\:;<>"\',.?/'.indexOf(char) >= 0) {
-            if (this.canBeBoolOrNull) {
-                const text = this.document.substring(this.unquotedTextStartPos, this.pos);
-                if (text.length === 4 || text.length === 5) {
-                    const upper = text.toUpperCase();
-                    let lit = null;
-                    if (upper === 'TRUE') {
-                        lit = new XtnBooleanImpl(true, text, false, undefined, {}, {});
-                    }
-                    else if (upper === 'FALSE') {
-                        lit = new XtnBooleanImpl(false, text, false, undefined, {}, {});
-                    }
-                    else if (upper === 'NULL') {
-                        lit = new XtnNullImpl(text, {}, {});
-                    }
-                    if (lit) {
-                        this.popStack();
-                        this.completeValue(lit);
-                        return true;
-                    }
-                }
-                this.canBeBoolOrNull = false;
-            }
-            if ('({<.+\n'.indexOf(char) >= 0) {
-                this.popStack();
-                this.pushStack(this.consumeTagName);
-                return this.consumeTagName(char, next);
-            }
-            if (ws) {
-                return true;
-            }
-            else {
-                //error: if key, should be quoted, if tag, contains disallowed character
-                return true;
-            }
+        this.popStack();
+        const str = this.document.substring(this.unquotedTextStartPos, this.pos + 1).trimEnd().replace(/\s/g, ' ');
+        const k = new XtnKeyImpl(str, false, {}, {});
+        const parent = this.getCurrentParent();
+        if (parent instanceof XtnKeyValuePairImpl) {
+            this.interpretAndCompleteValue(k);
+        }
+        else {
+            this.rawText = k;
         }
         return true;
     }

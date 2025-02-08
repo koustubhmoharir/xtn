@@ -1,6 +1,6 @@
-key1 :[
+key1: [
     {
-        key2 :` value2
+        key2: ` value2
     }
-    x :` something
+    x: ` something
 ]

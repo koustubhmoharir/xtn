@@ -14,23 +14,27 @@ export enum XtnErrorCode {
     ARRAY_ELEMENT_MUST_NOT_HAVE_A_KEY = 13,
     OBJECT_KEYS_CANNOT_BE_REPEATED = 14,
     INCORRECT_INDENTATION = 15,
+    COLON_EXPECTED_AFTER_BRACE = 16,
+    OBJECT_KEY_MISSING_END_QUOTE = 17,
+    OBJECT_KEY_SPECIAL_CHARACTERS_NOT_QUOTED = 18,
+    OBJECT_KEY_START_PLUS_MINUS_NOT_QUOTED = 18
 }
 
 export class XtnException extends Error {
     code: XtnErrorCode;
     message: string;
     line_no: number;
-    colStart: number;
-    colEnd: number;
+    col_start: number;
+    col_end: number;
     obj: XtnObject | null;
 
-    constructor(code: XtnErrorCode, line_no: number, colStart: number, colEnd: number, message: string, obj: XtnObject | null) {
+    constructor(code: XtnErrorCode, line_no: number, col_start: number, col_end: number, message: string, obj: XtnObject | null) {
         super(message);
         this.code = code;
         this.message = message;
         this.line_no = line_no;
-        this.colStart = colStart;
-        this.colEnd = colEnd;
+        this.col_start = col_start;
+        this.col_end = col_end;
         this.obj = obj;
     }
 }
@@ -41,7 +45,40 @@ enum _Mode {
     MULTILINE = 3,
 }
 
-type XtnValue = string | XtnValue[] | { [key: string]: XtnValue };
+interface XtnDate {
+    type: "date";
+    date: string; 
+}
+
+interface XtnTime {
+    type: "time";
+    time: string;
+}
+
+interface XtnDateTime {
+    type: "datetime";
+    date: string;
+    time: string;
+}
+
+interface XtnDateTimeOffset {
+    type: "datetimeoffset";
+    date: string;
+    time: string;
+    offset: string;
+}
+
+type XtnValue =
+    | null
+    | string
+    | bigint
+    | number
+    | XtnDate
+    | XtnTime
+    | XtnDateTime
+    | XtnDateTimeOffset
+    | XtnValue[]
+    | Map<string, XtnValue>;
 
 export abstract class XtnElement {
     startLineNo: number | null;
@@ -74,14 +111,24 @@ export class XtnDataElement extends XtnElement {
     }
 }
 
-export class XtnText extends XtnDataElement {
-    value: string;
-    force_multiline: boolean;
+export const enum XtnScalarType {
+    Null = "null",
+    String = "string",
+    Int = "int",
+    Float = "float",
+    Bool = "bool",
+    Time = "time",
+    Text = "text"
+}
 
-    constructor(value: string, force_multiline: boolean = false, comments_above: XtnComment[] | null = null, comments_below: XtnComment[] | null = null) {
+export class XtnScalar extends XtnDataElement {
+    text_value: string;
+    type: XtnScalarType;
+
+    constructor(text_value: string, type: XtnScalarType, comments_above: XtnComment[] | null = null, comments_below: XtnComment[] | null = null) {
         super(comments_above, comments_below);
-        this.value = value;
-        this.force_multiline = force_multiline;
+        this.text_value = text_value;
+        this.type = type;
     }
 }
 
@@ -110,20 +157,24 @@ function hasNon32Whitespace(str: string) {
     return false;
 }
 
+const disallowed_in_key = /["`:!#~?@{}[\]]/;
+
 export class XtnObject extends XtnDataElement {
-    elements: { [key: string]: XtnDataElement };
+    tag_name: string;
+    elements: Map<string, XtnDataElement>;
     comments_inner_top: XtnComment[] | null;
     comments_inner_bottom: XtnComment[] | null;
 
-    constructor(elements: { [key: string]: XtnDataElement } | null = null, comments_above: XtnComment[] | null = null, comments_inner_top: XtnComment[] | null = null, comments_inner_bottom: XtnComment[] | null = null, comments_below: XtnComment[] | null = null) {
+    constructor(tag_name: string, elements: Map<string, XtnDataElement> | null = null, comments_above: XtnComment[] | null = null, comments_inner_top: XtnComment[] | null = null, comments_inner_bottom: XtnComment[] | null = null, comments_below: XtnComment[] | null = null) {
         super(comments_above, comments_below);
-        this.elements = elements || {};
+        this.tag_name = tag_name;
+        this.elements = elements ?? new Map();
         this.comments_inner_top = comments_inner_top;
         this.comments_inner_bottom = comments_inner_bottom;
     }
 
     static load(lines: string[]): XtnObject {
-        const obj = new XtnObject({});
+        const obj = new XtnObject("");
         _loadFromLines(lines, obj);
         return obj;
     }
@@ -142,13 +193,13 @@ export class XtnObject extends XtnDataElement {
                 ++i;
                 line = line.trimEnd();
                 if (i === 0 && comment.prefix) {
-                    write(indent, '##', comment.prefix, ' ', line);
+                    write(indent, '%%', comment.prefix, ' ', line);
                 }
                 else if (line.length === 0) {
                     write();
                 }
                 else {
-                    write(indent, '# ', line);
+                    write(indent, '% ', line);
                 }
             };
         }
@@ -159,11 +210,16 @@ export class XtnObject extends XtnDataElement {
                 }
             }
         }
+        const quote_name_if_reqd = (name: string) => {
+            if (name.match(disallowed_in_key) || name.match(/^%\+-/))
+                return '"' + name.replace(/`/g, "``").replace(/"/g, '`"') + '"';
+            return name;
+        }
         
         const write_pair = (name: string, element: XtnDataElement, indent: string) => {
             write_comments(element.comments_above, indent);
             if (element instanceof XtnArray) {
-                write(indent, name, '[]:');
+                write(indent, quote_name_if_reqd(name), '[]:');
                 const innerIndent = indent + '    ';
                 write_comments(element.comments_inner_top, innerIndent);
                 for (const arrayElement of element.elements) {
@@ -173,21 +229,20 @@ export class XtnObject extends XtnDataElement {
                 write(indent, '----');
             }
             else if (element instanceof XtnObject) {
-                write(indent, name, '{}:');
+                write(indent, quote_name_if_reqd(name), `{${element.tag_name}}:`);
                 const innerIndent = indent + '    ';
                 write_comments(element.comments_inner_top, innerIndent);
-                for (const key in element.elements) {
-                    const value = element.elements[key];
+                for (const [key, value] of element.elements) {
                     write_pair(key, value, innerIndent);
                 }
                 write_comments(element.comments_inner_bottom, innerIndent);
                 write(indent, '----');
             }
-            else if (element instanceof XtnText) {
-                const value = element.value;
-                const lines = value.length === 0 ? [] : value.split(/\r?\n/);
-                if (element.force_multiline || lines.length > 1 || isWhiteSpace(value.substring(0, 1)) || isWhiteSpace(value.substring(value.length - 1)) || hasNon32Whitespace(value)) {
-                    write(indent, name, "'':");
+            else if (element instanceof XtnScalar) {
+                const text_value = element.text_value;
+                if (element.type == XtnScalarType.Text) {
+                    const lines = text_value.length === 0 ? [] : text_value.split(/\r?\n/);
+                    write(indent, quote_name_if_reqd(name), "``:");
                     const child_indent = indent + '    ';
                     for (let line of lines) {
                         write(child_indent, line);
@@ -195,7 +250,7 @@ export class XtnObject extends XtnDataElement {
                     write(indent, '----');
                 }
                 else {
-                    write(indent, name, ": ", value);
+                    write(indent, quote_name_if_reqd(name), ": ", text_value);
                 }
             }
             write_comments(element.comments_below, indent);
@@ -203,8 +258,8 @@ export class XtnObject extends XtnDataElement {
         };
 
         write_comments(this.comments_inner_top, '');
-        for (const key in this.elements) {
-            write_pair(key, this.elements[key], '');
+        for (const [key, value] of this.elements) {
+            write_pair(key, value, '');
         }
         write_comments(this.comments_inner_bottom, '');
     }
@@ -212,11 +267,11 @@ export class XtnObject extends XtnDataElement {
 
 
 
-function _make_Xtn(value: any): XtnArray | XtnObject | XtnText {
+function _make_Xtn(value: any, tag_name: string): XtnArray | XtnObject | XtnScalar {
     if (Array.isArray(value)) {
         return new XtnArray(value);
-    } else if (typeof value === 'object') {
-        return new XtnObject(value);
+    } else if (value instanceof Map) {
+        return new XtnObject(tag_name, value);
     } else {
         return new XtnText(value);
     }
@@ -227,7 +282,50 @@ function _convert_spaces(value: string, collapse: boolean): string {
     return value.replace(pattern, ' ');
 }
 
-export function convert_key(value: string) {
+export function convert_key(value: string, raise_key_error: (code: XtnErrorCode, msg: string, length: number) => void) {
+    if (value.startsWith('"')) {
+        if (value.endsWith('"')) {
+            value = value.substring(1, value.length - 1);
+            value = value.replace(/""|`[x|u]\{([0-9a-e]+)\}|`./g, (e, u) => {
+                if (e === '""') return '"';
+                if (e.length > 2) {//unicode escape
+                    //interpret u to hexadecimal unicode code point
+                }
+                switch (e[1]) {
+                    case '`':
+                        return '`';
+                    case '0':
+                        return '\0';
+                    case '"':
+                        return '"';
+                    case "'":
+                        return "'";
+                    case 't':
+                        return '\t';
+                    case 'r':
+                        return '\r';
+                    case 'n':
+                        return '\n';
+                    case 'v':
+                        return '\v';
+                    case 'b':
+                        return '\b';
+                    case 'f':
+                        return '\f';
+                }
+            });
+        }
+        else {
+            raise_key_error(XtnErrorCode.OBJECT_KEY_MISSING_END_QUOTE, "Object key has a missing closing double quote", value.length);
+        }
+    }
+    else if (value.match(disallowed_in_key)) {
+        raise_key_error(XtnErrorCode.OBJECT_KEY_SPECIAL_CHARACTERS_NOT_QUOTED, "Object key with any of the characters \"`:!#~?@{}[] must be enclosed in double quote", value.length);
+    }
+    else if (value.match(/[+-]/)) {
+        raise_key_error(XtnErrorCode.OBJECT_KEY_START_PLUS_MINUS_NOT_QUOTED, "Object key that starts with + or - must be enclosed in double quote", value.length);
+    }
+    return value;
     return _convert_spaces(value, true);
 }
 
@@ -241,47 +339,135 @@ function trimLeadingSpaceOrTab(str: string, char: string) {
     return str.replace(/^\t*/, '');
 }
 
-export function partition(str: string, sep: string) {
-    const i = str.indexOf(sep);
-    if (i >= 0) return [str.substring(0, i), sep, str.substring(i + sep.length)];
-    return [str, '', ''];
+function find_closing_quote(str: string, qi: number) {
+    while (true) {
+        const nqi = str.indexOf('"', qi + 1);
+        if (nqi >= 0) {
+            if (str[nqi - 1] === '`') {
+                // next quote is escaped, so it is not closing quote.
+                qi = nqi;
+                continue;
+            }
+            // found closing quote.
+            return nqi;
+        }
+        // No closing quote found
+        return -1;
+    }
+}
+
+function find_closing_brace(str: string, bi: number) {
+    let i = bi;
+    let cbi = str.indexOf('}', i + 1);
+    let count = 1;
+    while (cbi >= 0) {
+        const nbi = str.indexOf('{', i + 1);
+        if (nbi < 0 || nbi > cbi) {
+            --count;
+            if (count === 0) return cbi;
+            i = cbi;
+            cbi = str.indexOf('}', i + 1);
+        }
+        else {
+            ++count;
+            i = nbi;
+        }
+    }
+    return -1;
+}
+
+function partition_after_brace(str: string, bi: number) {
+    const cbi = find_closing_brace(str, bi);
+    if (cbi >= 0) {
+        const ci = str.indexOf(':', cbi + 1);
+        if (ci >= 0) {
+            return [str.substring(0, bi), str.substring(bi + 1, ci), ':', str.substring(ci + 1)];
+        }
+    }
+    // invalid
+    return [str, '', '', ''];
+}
+
+export function partition(str: string) {
+    if (str.startsWith('-')) {
+        // an unquoted name cannot start with -
+        return [str, '', '', ''];
+    }
+    let m = str.match(/[:"{]/);
+    if (m) {
+        switch (m[0]) {
+            case ':':
+                return [str.substring(0, m.index), "", ':', str.substring(m.index! + 1)];
+            case '{': {
+                const bi = m.index!;
+                return partition_after_brace(str, bi);
+            }
+            case '"': {
+                const qi = m.index!;
+                const cqi = find_closing_quote(str, qi);
+                if (cqi >= 0) {
+                    m = str.substring(cqi + 1).match(/[:{]/);
+                    if (m) {
+                        if (m[0] === ':') {
+                            const ci = cqi + 1 + m.index!;
+                            return [str.substring(0, ci), "", ':', str.substring(ci + 1)];
+                        }
+                        else {// m[0] === '{'
+                            const bi = cqi + 1 + m.index!;
+                            return partition_after_brace(str, bi);
+                        }
+                    }
+                    // no colon, handle later
+                    break;
+                }
+                else {// invalid
+                    return [str, '', '', ''];
+                }
+            }
+        }
+    }
+    
+    // No colon found that is not inside quotes
+    if (str.endsWith('!'))
+        return [str.substring(0, str.length - 1), '', '!', ''];
+    return [str, '', '', ''];
 }
 
 class _ObjectState {
     start_line: number;
-    current: Record<string, any>;
+    current: Map<string, any>;
     target: XtnObject | null;
     in_array: boolean;
     mode: 'OBJECT' = 'OBJECT';
 
-    constructor(start_line: number, current: Record<string, any>, target: XtnObject | null, in_array: boolean) {
+    constructor(start_line: number, current: Map<string, any>, target: XtnObject | null, in_array: boolean) {
         this.start_line = start_line;
         this.current = current;
         this.target = target;
         this.in_array = in_array;
     }
 
-    set(name: string, value: Record<string, any> | any[] | string, raise_key_error: (code: XtnErrorCode, msg: string, length: number) => void, complexSetter?: [(v: string) => void]) {
+    set(name: string, value: Map<string, any> | any[] | string, tag_name: string, raise_key_error: (code: XtnErrorCode, msg: string, length: number) => void, complexSetter?: [(v: string) => void]) {
         const len = name.length;
-        name = convert_key(name);
+        name = convert_key(name, raise_key_error);
         if (typeof value === 'string') {
             value = _convert_spaces(value, false);
         }
-        if (name in this.current) {
+        if (this.current.has(name)) {
             raise_key_error(XtnErrorCode.OBJECT_KEYS_CANNOT_BE_REPEATED, `Object keys cannot be repeated. ${name} already exists.`, len);
             name += '+' + (Object.keys(this.current).length + 1);
         }
         if (this.target == null) {
-            this.current[name] = value;
+            this.current.set(name, value);
             if (complexSetter)
-                complexSetter[0] = v => this.current[name] = v;
+                complexSetter[0] = v => this.current.set(name, v);
             return null;
         }
         else {
-            const child = _make_Xtn(value);
-            this.current[name] = child;
+            const child = _make_Xtn(value, tag_name);
+            this.current.set(name, child);
             if (complexSetter)
-                complexSetter[0] = v => (child as XtnText).value = v;
+                complexSetter[0] = v => (child as XtnScalar).text_value = v;
             return child;
         }
     }
@@ -299,7 +485,7 @@ class _ArrayState {
         this.target = target;
     }
 
-    set(name: string, value: Record<string, any> | any[] | string, raise_error: (code: XtnErrorCode, msg: string, length: number) => void, complexSetter?: [(v: string) => void]) {
+    set(name: string, value: Map<string, any> | any[] | string, tag_name: string, raise_error: (code: XtnErrorCode, msg: string, length: number) => void, complexSetter?: [(v: string) => void]) {
         name = convert_key(name);
         if (typeof value === 'string') {
             value = _convert_spaces(value, false);
@@ -319,10 +505,10 @@ class _ArrayState {
             return null;
         }
         else {
-            const child = _make_Xtn(value);
+            const child = _make_Xtn(value, tag_name);
             this.current.push(child);
             if (complexSetter) {
-                complexSetter[0] = v => (child as XtnText).value = v;
+                complexSetter[0] = v => (child as XtnScalar).text_value = v;
             }
             return child;
         }
@@ -364,12 +550,12 @@ export function trimEndOfLine(line: string) {
     return line;
 }
 
-function _load(document: string, target: XtnObject | null): Record<string, any> {
+function _load(document: string, target: XtnObject | null): Map<string, any> {
     const lines = breakIntoLines(document);
     return _loadFromLines(lines, target);
 }
-function _loadFromLines(lines: string[], target: XtnObject | null): Record<string, any> {
-    const top_level: Record<string, any> = target == null ? {} : target.elements;
+function _loadFromLines(lines: string[], target: XtnObject | null): Map<string, any> {
+    const top_level: Map<string, any> = target == null ? new Map() : target.elements;
     const stack: (_ObjectState | _ArrayState | _MultilineState)[] = [
         new _ObjectState(-1, top_level, target, false)
     ];
@@ -393,7 +579,7 @@ function _loadFromLines(lines: string[], target: XtnObject | null): Record<strin
             commentsDown.length = 0;
         }
         upTarget = target;
-        upProp = target instanceof XtnText ? 'below' : 'inner';
+        upProp = target instanceof XtnScalar ? 'below' : 'inner';
     }
 
     function attach_trailing_comments(target: XtnDataElement | null): void {
@@ -426,22 +612,26 @@ function _loadFromLines(lines: string[], target: XtnObject | null): Record<strin
             }
             else {
                 let prefix = '';
-                if (line.startsWith('##')) {
-                    if (line.startsWith('####')) {
+                if (line.startsWith('%%')) {
+                    if (line.startsWith('%%%%')) {
                         line = line.substring(4).trimStart();
-                        prefix = '##';
+                        prefix = '%%';
                     }
                     else {
                         line = line.substring(2).trimStart();
-                        prefix = line.match(/^\s*([^\s]*)/)?.[1] ?? '';
+                        prefix = line.match(/^\s*([^\s]*)/)?.[1] ?? ''; // prefix is first word
                         if (prefix.length)
-                            line = line.substring(line.indexOf(prefix[0]) + prefix.length).trimStart();
+                            line = line.substring(line.indexOf(prefix[0]) + prefix.length).trimStart(); // rest of line after prefix with whitespace trimmed from the start
                     }
                 }
-                else if (line.length > 0)
+                else if (line.length > 0) {
+                    // we know line starts with %
+                    // take the rest of the line after it, dropping the first character after the % if it is whitespace
+                    // additional whitespace is not dropped
                     line = line.substring(line[1].trimStart().length === 0 ? 2 : 1);
+                }
                 
-                if (prefix === '##') {
+                if (prefix === '%%') {
                     commentsDown.push(comment = new XtnComment(line, prefix));
                     commentsUp?.push(...commentsDown);
                     commentsDown.length = 0
@@ -478,6 +668,7 @@ function _loadFromLines(lines: string[], target: XtnObject | null): Record<strin
         let line: string = orig_line;
         const state = stack[stack.length - 1];
         if (state.mode === 'MULTILINE') {
+            // TODO: Add support for escape sequences for unicode and line endings
             if (state.exp_indent == null) {
                 if (state.indent.length > 0) {
                     state.indent_char = state.indent[0];
@@ -525,7 +716,7 @@ function _loadFromLines(lines: string[], target: XtnObject | null): Record<strin
         }
         else {
             line = line.trim();
-            if (line.startsWith('#')) {
+            if (line.startsWith('%')) {
                 record_comment(line);
                 continue;
             }
@@ -533,11 +724,14 @@ function _loadFromLines(lines: string[], target: XtnObject | null): Record<strin
                 record_comment(line);
                 continue;
             }
-            let [left, sep, right] = partition(line, ':');
+            let [left, braced, sep, right] = partition(line);
+            const origleftLen = left.length;
             left = left.trimEnd();
+            braced = braced.trimEnd();
             right = right.trimStart();
-            if (sep === ':') {
+            if (sep === ':' || sep === '!') {
                 if (left.length === 0) {
+                    // TODO: A line can actually start with a colon in the unlikely case that the entire file is a single string
                     const colStart = orig_line.indexOf(':');
                     raise_error(XtnErrorCode.LINE_MUST_NOT_START_WITH_COLON, 'A line cannot start with a colon', colStart, colStart + 1);
                 }
@@ -546,15 +740,19 @@ function _loadFromLines(lines: string[], target: XtnObject | null): Record<strin
                     raise_error(XtnErrorCode.PLUS_ENCOUNTERED_OUTSIDE_ARRAY, 'A line cannot start with a plus outside the context of an array', leftColStart, leftColStart + 1);
                 }
 
-                if (left.endsWith('{}')) {
+                if (braced && sep === ':') {
+                    if (!braced.endsWith('}')) {
+                        const colStart = leftColStart + origleftLen + braced.indexOf('}') + 1;
+                        raise_error(XtnErrorCode.COLON_EXPECTED_AFTER_BRACE, "A colon must follow the closing brace of an object", colStart, leftColStart + origleftLen + braced.length);
+                    }
+                    const tag_name = _convert_spaces(braced.substring(1, left.length - 1).trim(), true);
                     if (right.length > 0) {
                         const colEnd = orig_line.lastIndexOf(right[right.length - 1]) + 1;
                         raise_error(XtnErrorCode.OBJECT_MUST_BE_ON_NEW_LINE, 'An object must start on a new line', colEnd - right.length, colEnd);
                     }
-                    const name = left.substring(0, left.length -2).trimEnd();
-                    const obj: Record<string, any> = {};
+                    const obj: Map<string, any> = new Map();
                     keyLineNo = i;
-                    const child_target = state.set(name, obj, raise_key_error);
+                    const child_target = state.set(left, obj, tag_name, raise_key_error);
                     if (child_target) child_target.startLineNo = i;
                     attach_comments(child_target);
                     stack.push(new _ObjectState(i, obj, child_target as XtnObject, state.mode === 'ARRAY'));
@@ -567,12 +765,12 @@ function _loadFromLines(lines: string[], target: XtnObject | null): Record<strin
                     const name = left.substring(0, left.length -2).trimEnd();
                     const obj: any[] = [];
                     keyLineNo = i;
-                    const child_target = state.set(name, obj, raise_key_error);
+                    const child_target = state.set(name, obj, '', raise_key_error);
                     if (child_target) child_target.startLineNo = i;
                     attach_comments(child_target);
                     stack.push(new _ArrayState(i, obj, child_target as XtnArray));
                 }
-                else if (left.endsWith("''")) {
+                else if (left.endsWith("``")) {
                     const indent = orig_line.substring(0, orig_line.indexOf(left[0]));
                     if (indent.length > 0) {
                         const indent_char = indent[0];
@@ -595,7 +793,7 @@ function _loadFromLines(lines: string[], target: XtnObject | null): Record<strin
                     }
                     keyLineNo = i;
                     const setter = [null] as unknown as [(v: string) => void];
-                    const child_target = state.set(name, '', raise_key_error, setter) as XtnText | null;
+                    const child_target = state.set(name, '', '', raise_key_error, setter) as XtnText | null;
                     if (child_target) {
                         child_target.startLineNo = i;
                         child_target.force_multiline = true;
@@ -650,3 +848,4 @@ function _loadFromLines(lines: string[], target: XtnObject | null): Record<strin
 export function load(document: string): Record<string, XtnValue> {
     return _load(document, null);
 }
+

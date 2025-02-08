@@ -1,11 +1,11 @@
-key1 :` value1
+key1: ` value1
 
 // This is a comment
 // This is a comment (same as above)
 
-key2 :{
-    key3 :` value3
-    key4 :[
+key2: {
+    key3: ` value3
+    key4: [
         ` value41
         ` value42
 		? true
@@ -14,21 +14,21 @@ key2 :{
 		% 1234
 		~ 1.23e12
     ]
-    key5 :{
-        key6 :` value6
+    key5: {
+        key6: ` value6
     }
-    key7 :"""
+    key7: """
         value7 a
         value7 b
     """
-    key8 :[
+    key8: [
         {
-            key9 :` value91
-            key10 :` value101
+            key9: ` value91
+            key10: ` value101
         }
         {
-            key9 :` value92
-            key10 :` value102
+            key9: ` value92
+            key10: ` value102
         }
         [
             ` value111
@@ -38,11 +38,11 @@ key2 :{
     ]
 }
 
-key9 :? true
-key10 :? false
-key11 : null
-key12 :% 1234
-key13 :~ -1.23e12
+key9: ? true
+key10: ? false
+key11:  null
+key12: % 1234
+key13: ~ -1.23e12
 
 /// meta This is a special comment
 /// meta This is the same as above (still a special comment)

@@ -8,8 +8,7 @@
 			true,
 			false,
 			null,
-			1234,
-			1.23e12
+			1234
         ],
         "key5": {
             "key6": "value6"
@@ -34,6 +33,5 @@
 	"key9": true,
 	"key10": false,
 	"key11": null,
-	"key12": 1234,
-	"key13": -1.23e12
+	"key12": 1234
 }

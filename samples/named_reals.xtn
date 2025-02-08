@@ -1,0 +1,12 @@
+o: ~ NaN
+p: ~ -NaN
+q: ~ +NaN
+r: ~ +Infinity
+s: ~ -Infinity
+t: ~ Infinity
+u: NaN
+v: -NaN
+w: +NaN
+x: +Infinity
+y: -Infinity
+z: Infinity
