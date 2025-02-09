@@ -132,3 +132,10 @@ test('test_named_reals', () => {
     expect(xtn["y"]).toEqual(Number.NEGATIVE_INFINITY);
     expect(xtn["z"]).toEqual(Number.POSITIVE_INFINITY);
 });
+
+test('match_strings_ml', () => {
+    const xtn = loadXtn('strings_ml').data();
+    const json = loadJson('strings_ml');
+
+    expect(xtn).toEqual(json);
+});

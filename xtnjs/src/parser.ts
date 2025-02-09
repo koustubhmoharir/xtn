@@ -754,34 +754,80 @@ class Parser {
         }
         // on second entry, char is the third " in an opening """
         if (this.cqCount === 1) {
-            if (next === '\n') {
+            this.mlIndent = null;
+            if (next === '\\' || next.trimStart().length === 0) {
                 this.cqCount = 2;
+                this.mlSep = null;
+                this.popStack();
+                this.pushStack(this.consumeStartTripleQuote);
             }
             else {
                 // error
             }
             return true;
         }
-        // on third entry, char is the newline immediately after the opening """
-        if (this.cqCount === 2) {
+        
+        return true;
+    }
+    private mlSep: string | null = null;
+    private consumeStartTripleQuote(char: string, next: string) {
+        // on first entry, char is whitespace or newline or \ after opening """
+        if (this.mlSep === null) {
+            if (char === '\\') {
+                if (next === 'r') {
+                    this.mlSep = '\r\n';
+                    return true;
+                }
+                else {
+                    //error
+                }
+            }
+            else if (char === '\n') {
+                this.mlSep = '\n';
+                this.cqCount = 3;
+            }
+            else if (next === '\\' || next.trimStart().length === 0) {
+                return true;
+            }
+            else {
+                //error
+            }
+        }
+        else if (this.cqCount === 2) {
+            // on first entry, char is r in the \r on the line containing opening """
+            if (next === '\n') {
+                this.cqCount = 3;
+                return true;
+            }
+            else if (next.trimStart().length === 0) {
+                return true;
+            }
+            else {
+                //error
+                return true;
+            }
+        }
+        if (this.cqCount === 3) {
             const line = this.document.substring(this.lineStartPos, this.pos);
             this.mlStartIndent = line.substring(0, line.length - line.trimStart().length);
             if (this.mlStartIndent.length > 0) {
                 const ic = this.mlStartIndent[0];
-                if (ic === ' ') {
-                    if (this.mlStartIndent.match(/[^ ]/) != null) {
-                        // error
-                    }
-                    this.mlIndent = this.mlStartIndent + '    ';
-                }
-                else if (ic === '\t') {
+                if (ic === '\t') {
                     if (this.mlStartIndent.match(/[^\t]/) != null) {
                         // error
                     }
                     this.mlIndent = this.mlStartIndent + '\t';
                 }
                 else {
-                    // error
+                    if (ic === ' ') {
+                        if (this.mlStartIndent.match(/[^ ]/) != null) {
+                            // error
+                        }
+                    }
+                    else {
+                        // error
+                    }
+                    this.mlIndent = this.mlStartIndent + '    ';
                 }
             }
             else {
@@ -792,15 +838,36 @@ class Parser {
                     this.mlIndent = '\t';
                 }
                 else {
-                    this.mlIndent = '\t';
+                    if (next !== '\n')
+                        this.mlIndent = '    ';// this doesn't really matter
                 }
             }
             this.indentCharCount = 0;
             this.cqCount = 0;
             this.mlStringLines.length = 0;
             this.popStack();
-            this.pushStack(this.consumeMultilineString);
+            if (this.mlIndent === null)
+                this.pushStack(this.consumeUnindentedML);
+            else
+                this.pushStack(this.consumeMultilineString);
         }
+        return true;
+    }
+    private consumeUnindentedML(char: string, next: string) {
+        // on first entry, char is the newline character that ends a blank line after the opening unindented """
+        // We want to find out what mlIndent should be. For this we need to find a non-blank line
+        this.mlStringLines.push('');
+        if (next === '\n') {
+            return true;
+        }
+        if (next === '\t') {
+            this.mlIndent = '\t';
+        }
+        else {
+            this.mlIndent = '    ';
+        }
+        this.popStack();
+        this.pushStack(this.consumeMultilineString);
         return true;
     }
     private mlStartIndent: string | null = null;
@@ -808,7 +875,7 @@ class Parser {
     private indentCharCount = 0;
     private mlStringLines: string[] = [];
     private consumeMultilineString(char: string, next: string) {
-        // on first entry, char is the first character on the line after the opening """
+        // on first entry, char is the first character on the first non-blank line after the opening """
         if (this.indentCharCount < this.mlIndent!.length) {
             if (char === this.mlIndent![0]) {
                 ++this.indentCharCount;
@@ -848,7 +915,7 @@ class Parser {
         }
         // on second entry, char is the last character in the closing """
         this.popStack();
-        this.completeValue(new XtnMStringImpl(this.mlStringLines.join('\n'), this.mlIndent![0], {}, {}));
+        this.completeValue(new XtnMStringImpl(this.mlStringLines.join(this.mlSep!), this.mlIndent![0], {}, {}));
         this.mlStringLines.length = 0;
         return true;
     }
