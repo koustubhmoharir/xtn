@@ -1,4 +1,4 @@
-type ParserCharConsumer = (c: string, n: string) => boolean;
+type ParserCharConsumer = (c: string, n: string) => void;
 
 
 export interface XtnCharPosition {
@@ -576,19 +576,22 @@ function isKeyLetter(char: string) {
 
 class Parser {
     constructor(readonly document: string) {
-        this.parentsStack = [this.rootObj];
+        this._scopeStates = [this._scopeState = { scope: this.rootObj, state: {} }];
+        this._consumers.push(this.consumeRootObject);
+        this._consumer = this.consumeRootObject;
     }
 
-    stack: ParserCharConsumer[] = [];
-    top: ParserCharConsumer | undefined = undefined;
-    pushStack(consumer: ParserCharConsumer) {
-        this.stack.push(consumer);
-        this.top = consumer;
+    _consumers: ParserCharConsumer[] = [];
+    _consumer: ParserCharConsumer;
+    get consumer() { return this._consumer; }
+    pushConsumer(consumer: ParserCharConsumer) {
+        this._consumers.push(consumer);
+        this._consumer = consumer;
     }
-    popStack() {
-        const stack = this.stack;
+    popConsumer() {
+        const stack = this._consumers;
         stack.pop();
-        this.top = stack.length > 0 ? stack[stack.length - 1] : undefined;
+        this._consumer = stack[stack.length - 1];
     }
 
     lineNo = 0;
@@ -600,8 +603,24 @@ class Parser {
     }
 
     readonly rootObj = new XtnObjectImpl({}, {});
-    private parentsStack: (XtnArrayImpl | XtnValueOrPairListImpl | XtnKeyValuePairImpl)[];
-    private getCurrentParent() { return this.parentsStack[this.parentsStack.length - 1]!; }
+    private _scopeState: {
+        scope: XtnArrayImpl | XtnValueOrPairListImpl | XtnKeyValuePairImpl;
+        state: {
+            childMarker?: boolean;
+        }
+    };
+    private get currentScope() { return this._scopeState.scope; }
+    private get currentScopeState() { return this._scopeState.state; }
+    private _scopeStates: (Parser["_scopeState"])[];
+    private pushScope(scope: XtnArrayImpl | XtnValueOrPairListImpl | XtnKeyValuePairImpl) {
+        this._scopeStates.push(this._scopeState = { scope, state: {} });
+    }
+    private popScope() {
+        const ss = this._scopeStates;
+        const scopeState = ss.pop();
+        this._scopeState = ss[ss.length - 1];
+        return scopeState!.scope;
+    }
 
     private interpretAndCompleteValue(value: XtnKeyImpl) {
         const text = value.name;
@@ -638,21 +657,21 @@ class Parser {
         }
     }
     private completeValue(value: XtnValueImpl) {
-        const parent = this.getCurrentParent();
-        if (parent instanceof XtnKeyValuePairImpl) {
-            this.popStack();
-            this.parentsStack.pop();
-            parent.value = value;
-            const parentList = this.getCurrentParent();
-            if (parentList instanceof XtnValueOrPairListImpl) {
-                parentList.items.push(parent);
+        const scope = this.currentScope;
+        if (scope instanceof XtnKeyValuePairImpl) {
+            this.popConsumer();
+            this.popScope();
+            scope.value = value;
+            const parentScope = this.currentScope;
+            if (parentScope instanceof XtnValueOrPairListImpl) {
+                parentScope.items.push(scope);
             }
             else {
                 // error
             }
         }
         else {
-            parent.items.push(value);
+            scope.items.push(value);
         }
     }
     
@@ -677,14 +696,14 @@ class Parser {
                 return false;
             }
             else {
-                this.processCharActual('\n', next === '\r' ? '\n' : next);
+                this.consumer('\n', next === '\r' ? '\n' : next);
                 this.lineNo++;
                 this.lineStartPos = this.pos + 1;
                 return true;
             }
         }
         if (char === '\n') {
-            this.processCharActual(char, next === '\r' ? '\n' : next);
+            this.consumer(char, next === '\r' ? '\n' : next);
             if (this.crlf) {
                 this.pos++;
                 this.colNo++;
@@ -694,33 +713,24 @@ class Parser {
             this.lineStartPos = this.pos + 1;
             return true;
         }
-        this.processCharActual(char, next === '\r' ? '\n' : next);
+        this.consumer(char, next === '\r' ? '\n' : next);
         return true;
     }
 
     private ignoreCount = 0;
     private disableNext = false;
-    private processCharActual(char: string, next: string) {
-        if (this.top) {
-            if (this.top(char, next))
-                return;
-        }
-        this.consumeInner(char, next, true);
-    }
 
     commentStartPos = -1;
     private startComment() {
         this.commentStartPos = this.pos;
-        this.pushStack(this.consumeComment);
+        this.pushConsumer(this.consumeComment);
     }
     private consumeComment(char: string, next: string) {
         // on first entry, char is the second character of //
         if (char === '\n') {
             this.logFragmentExcl("comment", this.commentStartPos);
-            this.popStack();
-            return true;
+            this.popConsumer();
         }
-        return true;
     }
 
     private rawText: XtnKeyImpl | XtnQStringImpl | null = null;
@@ -733,10 +743,10 @@ class Parser {
         this.quoteChar = char;
         this.quoteStartPos = this.pos;
         if (next === this.quoteChar)
-            this.pushStack(this.consumeQuoted);
+            this.pushConsumer(this.consumeQuoted);
         else {
             this.jsonStrStartPos = this.pos;
-            this.pushStack(this.consumeJsonString);
+            this.pushConsumer(this.consumeJsonString);
         }
     }
     private cqCount = 0;
@@ -745,11 +755,12 @@ class Parser {
         if (this.cqCount === 0) {
             if (next === this.quoteChar) {
                 this.cqCount = 1;
-                return true;
+                return;
             }
             else {
                 this.jsonStrStartPos = this.pos - 1;
-                return this.consumeJsonString(char, next);
+                this.consumeJsonString(char, next);
+                return;
             }
         }
         // on second entry, char is the third " in an opening """
@@ -758,16 +769,14 @@ class Parser {
             if (next === '\\' || next.trimStart().length === 0) {
                 this.cqCount = 2;
                 this.mlSep = null;
-                this.popStack();
-                this.pushStack(this.consumeStartTripleQuote);
+                this.popConsumer();
+                this.pushConsumer(this.consumeStartTripleQuote);
             }
             else {
                 // error
             }
-            return true;
+            return;
         }
-        
-        return true;
     }
     private mlSep: string | null = null;
     private consumeStartTripleQuote(char: string, next: string) {
@@ -776,7 +785,7 @@ class Parser {
             if (char === '\\') {
                 if (next === 'r') {
                     this.mlSep = '\r\n';
-                    return true;
+                    return;
                 }
                 else {
                     //error
@@ -787,7 +796,7 @@ class Parser {
                 this.cqCount = 3;
             }
             else if (next === '\\' || next.trimStart().length === 0) {
-                return true;
+                return;
             }
             else {
                 //error
@@ -797,14 +806,14 @@ class Parser {
             // on first entry, char is r in the \r on the line containing opening """
             if (next === '\n') {
                 this.cqCount = 3;
-                return true;
+                return;
             }
             else if (next.trimStart().length === 0) {
-                return true;
+                return;
             }
             else {
                 //error
-                return true;
+                return;
             }
         }
         if (this.cqCount === 3) {
@@ -845,20 +854,19 @@ class Parser {
             this.indentCharCount = 0;
             this.cqCount = 0;
             this.mlStringLines.length = 0;
-            this.popStack();
+            this.popConsumer();
             if (this.mlIndent === null)
-                this.pushStack(this.consumeUnindentedML);
+                this.pushConsumer(this.consumeUnindentedML);
             else
-                this.pushStack(this.consumeMultilineString);
+                this.pushConsumer(this.consumeMultilineString);
         }
-        return true;
     }
     private consumeUnindentedML(char: string, next: string) {
         // on first entry, char is the newline character that ends a blank line after the opening unindented """
         // We want to find out what mlIndent should be. For this we need to find a non-blank line
         this.mlStringLines.push('');
         if (next === '\n') {
-            return true;
+            return;
         }
         if (next === '\t') {
             this.mlIndent = '\t';
@@ -866,9 +874,8 @@ class Parser {
         else {
             this.mlIndent = '    ';
         }
-        this.popStack();
-        this.pushStack(this.consumeMultilineString);
-        return true;
+        this.popConsumer();
+        this.pushConsumer(this.consumeMultilineString);
     }
     private mlStartIndent: string | null = null;
     private mlIndent: string | null = null;
@@ -879,18 +886,18 @@ class Parser {
         if (this.indentCharCount < this.mlIndent!.length) {
             if (char === this.mlIndent![0]) {
                 ++this.indentCharCount;
-                return true;
+                return;
             }
             if (char === '\n') {
                 this.mlStringLines.push('');
                 this.indentCharCount = 0;
-                return true;
+                return;
             }
             if (char === this.quoteChar && next === this.quoteChar) {
                 this.cqCount = 0;
-                this.popStack();
-                this.pushStack(this.consumeMultilineEndQuotes);
-                return true;
+                this.popConsumer();
+                this.pushConsumer(this.consumeMultilineEndQuotes);
+                return;
             }
         }
         else if (char === '\n') {
@@ -898,26 +905,24 @@ class Parser {
             // process escape sequence at end
             this.mlStringLines.push(line);
             this.indentCharCount = 0;
-            return true;
+            return;
         }
-        return true;
     }
     private consumeMultilineEndQuotes(char: string, next: string) {
         // on first entry, char is the second character in the closing """
         if (this.cqCount === 0) {
             if (next === this.quoteChar) {
                 ++this.cqCount;
-                return true;
+                return;
             }
             else {
                 // error
             }
         }
         // on second entry, char is the last character in the closing """
-        this.popStack();
+        this.popConsumer();
         this.completeValue(new XtnMStringImpl(this.mlStringLines.join(this.mlSep!), this.mlIndent![0], {}, {}));
         this.mlStringLines.length = 0;
-        return true;
     }
     private escape = false;
     private consumeJsonString(char: string, next: string) {
@@ -931,31 +936,33 @@ class Parser {
         else if (char === this.quoteChar) {
             const jStr = this.document.substring(this.jsonStrStartPos, this.pos + 1);
             const qStr = new XtnQStringImpl(parseJson5String(jStr), {}, {});
-            this.popStack();
-            const parent = this.getCurrentParent();
-            if (parent instanceof XtnKeyValuePairImpl) {
+            this.popConsumer();
+            const scope = this.currentScope;
+            if (scope instanceof XtnKeyValuePairImpl) {
                 this.completeValue(qStr);
             }
             else {
                 this.rawText = qStr;
             }
         }
-        return true;
     }
 
     private startObject() {
-        this.pushStack(this.consumeObject);
-        this.parentsStack.push(new XtnObjectImpl({}, {}));
+        this.pushConsumer(this.consumeObject);
+        this.pushScope(new XtnObjectImpl({}, {}));
+    }
+    private consumeRootObject(char: string, next: string) {
+        this.consumeInner(char, next, true, '');
     }
     private consumeObject(char: string, next: string) {
-        return this.consumeInner(char, next, true);
+        this.consumeInner(char, next, true, '+');
     }
     private consumePairValue(char: string, next: string) {
-        return this.consumeInner(char, next, false);
+        this.consumeInner(char, next, false, null);
     }
-    private consumeInner(char: string, next: string, allowKeys: boolean) {
+    private consumeInner(char: string, next: string, allowKeys: boolean, childChar: '+' | '' | null) {
         if (char.trimStart().length === 0) {
-            return true;
+            return;
         }
         if (allowKeys && char === ":") {
             if (!this.rawText) {
@@ -963,10 +970,10 @@ class Parser {
                 this.rawText = new XtnKeyImpl("", false, {}, {});
             }
             const keyValuePair = new XtnKeyValuePairImpl(this.rawText instanceof XtnQStringImpl ? new XtnKeyImpl(this.rawText.value, true, this.rawText.posStart, this.rawText.posEnd) : this.rawText);
-            this.parentsStack.push(keyValuePair);
+            this.pushScope(keyValuePair);
             this.rawText = null;
-            this.pushStack(this.consumePairValue);
-            return true;
+            this.pushConsumer(this.consumePairValue);
+            return;
         }
         if (this.rawText instanceof XtnQStringImpl) {
             this.completeValue(this.rawText);
@@ -1007,15 +1014,15 @@ class Parser {
             this.startExplicitBoolean(next);
         }
         else if (char === '}') {
-            this.popStack();
-            const obj = this.parentsStack.pop();
+            this.popConsumer();
+            const obj = this.popScope();
             if (obj instanceof XtnObjectImpl) {
                 this.completeValue(obj);
             }
         }
         else if (char === ']') {
-            this.popStack();
-            const arr = this.parentsStack.pop();
+            this.popConsumer();
+            const arr = this.popScope();
             if (arr instanceof XtnArrayImpl) {
                 this.completeValue(arr);
             }
@@ -1029,15 +1036,14 @@ class Parser {
         else if (isKeyStartLetter(char)) {
             this.startUnquotedText(char, next);
         }
-        return true;
     }
 
     private startArray() {
-        this.pushStack(this.consumeArray);
-        this.parentsStack.push(new XtnArrayImpl({}, {}));
+        this.pushConsumer(this.consumeArray);
+        this.pushScope(new XtnArrayImpl({}, {}));
     }
     private consumeArray(char: string, next: string) {
-        return this.consumeInner(char, next, false);
+        this.consumeInner(char, next, false, null);
     }
 
     private numberStartPos = -1;
@@ -1049,28 +1055,27 @@ class Parser {
         this.intValue = 1n;
         this.numberStartPos = this.pos;
         this.numberType = "i";
-        this.pushStack(this.consumeLeadingNumberWhitespace);
+        this.pushConsumer(this.consumeLeadingNumberWhitespace);
         this.consumeLeadingNumberWhitespace(char, next);
     }
     private consumeLeadingNumberWhitespace(char: string, next: string) {
         // on first entry, char is the character before the integer
         if (next.trimStart().length === 0) {
-            return true;
+            return;
         }
         if (next === '-' || next === '+' || isAsciiNumber(next)) {
-            this.popStack();
-            this.pushStack(this.consumePotentialLeadingSign);
+            this.popConsumer();
+            this.pushConsumer(this.consumePotentialLeadingSign);
         }
         else if (next === 'n' || next === 'N') {
-            this.popStack();
-            this.pushStack(this.consumeNamedNumberOrNull);
+            this.popConsumer();
+            this.pushConsumer(this.consumeNamedNumberOrNull);
         }
-        return true;
     }
     private consumeNamedNumberOrNull(char: string, next: string) {
         // on first entry, char is n in null
         if (!isAsciiLetter(next)) {
-            this.popStack();
+            this.popConsumer();
             const text = this.document.substring(this.numberStartPos + 1, this.pos + 1).trimStart();
             const tu = text.toUpperCase();
             let numb;
@@ -1107,14 +1112,13 @@ class Parser {
             }
             this.completeValue(numb);
         }
-        return true;
     }
     private consumePotentialLeadingSign(char: string, next: string) {
         // on first entry, char is a minus or plus sign or the first digit
-        this.popStack();
+        this.popConsumer();
         this.decPtStartPos = -1;
         this.expStartPos = -1;
-        this.pushStack(this.consumeStartingNumberDigits);
+        this.pushConsumer(this.consumeStartingNumberDigits);
         const neg = char === '-';
         if (neg || char === '+') {
             this.intValue = neg ? -1n : 1n;
@@ -1125,9 +1129,9 @@ class Parser {
             }
             else {
                 if ('nNiI'.indexOf(next) >= 0) {
-                    this.popStack();
-                    this.pushStack(this.consumeNamedNumberOrNull);
-                    return true;
+                    this.popConsumer();
+                    this.pushConsumer(this.consumeNamedNumberOrNull);
+                    return;
                 }
                 if (!(next === '.' || isAsciiNumber(next))) {
                     // error
@@ -1137,13 +1141,12 @@ class Parser {
         else {
             this.consumeStartingNumberDigits(char, next);
         }
-        return true;
     }
     private consumeStartingNumberDigits(char: string, next: string) {
         // on first entry, char is the first digit of the number or the 0 in 0x
-        this.popStack();
+        this.popConsumer();
         if (this.numberType !== "r" && (char === '0' && next === 'x' || next === 'X')) {
-            this.pushStack(this.consumeHexStart);
+            this.pushConsumer(this.consumeHexStart);
         }
         else if (this.numberType !== "i" && char === '.') {
             this.decPtStartPos = this.pos;
@@ -1153,7 +1156,7 @@ class Parser {
             else if (!isAsciiNumber(next)) {
                 //error
             }
-            this.pushStack(this.consumeNumber);
+            this.pushConsumer(this.consumeNumber);
             this.isLeadingZero = false;
         }
         else {
@@ -1161,19 +1164,18 @@ class Parser {
             if (d !== 0n)
                 this.intValue *= d!;
             this.isLeadingZero = char === '0';
-            this.pushStack(this.consumeNumber);
+            this.pushConsumer(this.consumeNumber);
             this.consumeNumber(char, next);
         }
-        return true;
     }
     private consumeHexStart(char: string, next: string) {
         // on first entry, char is the x in 0x
         const h = hexDigit(next);
         if (h === null) {
             // error
-            return true;
+            return;
         }
-        this.popStack();
+        this.popConsumer();
         if (next !== '0') {
             this.isLeadingZero = false;
             this.intValue *= h;
@@ -1181,31 +1183,29 @@ class Parser {
         else {
             this.isLeadingZero = true;
         }
-        this.pushStack(this.consumeHex);
-        return true;
+        this.pushConsumer(this.consumeHex);
     }
     private isLeadingZero = false;
     private consumeHex(char: string, next: string) {
         // on first entry, char is the first hex digit but it has already been considered
         if (this.isLeadingZero) {
             if (next === '0')
-                return true;
+                return;
         }
         const h = hexDigit(next);
         if (h === null) {
-            this.popStack();
+            this.popConsumer();
             const text = this.document.substring(this.numberStartPos + (this.numberType === "i" ? 1 : 0), this.pos + 1).trimStart();
             if (this.isLeadingZero)
                 this.intValue = 0n;
             this.completeValue(new XtnIntegerImpl(this.intValue, text, true, undefined, {}, {}));
-            return true;
+            return;
         }
         if (this.isLeadingZero)
             this.intValue *= h;
         else
             this.intValue = this.intValue * 16n + (this.intValue > 0 ? 1n : -1n) * h;
         this.isLeadingZero = false;
-        return true;
     }
     
     private consumeNumber(char: string, next: string) {
@@ -1214,7 +1214,7 @@ class Parser {
         // 2) char is the first character after the decimal point of a number that has no integer part (this can be e / E or a decimal digit for the fractional part)
         if (this.isLeadingZero) {
             if (next === '0')
-                return true;
+                return;
         }
         const d = decDigit(next);
         if (d === null) {
@@ -1224,20 +1224,20 @@ class Parser {
                         this.expStartPos = this.pos + 1;
                         if (this.decPtStartPos < 0)
                             this.decPtStartPos = this.expStartPos;
-                        return true;
+                        return;
                     }
                     else if (this.decPtStartPos < 0 && next === '.') {
                         this.decPtStartPos = this.pos + 1;
-                        return true;
+                        return;
                     }
                 }
                 else {
                     if (this.expStartPos === this.pos && (next === '-' || next === '+')) {
-                        return true;
+                        return;
                     }
                 }
             }
-            this.popStack();
+            this.popConsumer();
             const text = this.document.substring(this.numberStartPos + (this.numberType !== null ? 1 : 0), this.pos + 1).trimStart();
             if (this.isLeadingZero)
                 this.intValue = 0n;
@@ -1245,42 +1245,40 @@ class Parser {
                 this.completeValue(new XtnIntegerImpl(this.intValue, text, true, undefined, {}, {}));
             else
                 this.completeValue(new XtnRealNumberImpl(Number(text), text, true, undefined, {}, {}));
-            return true;
+            return;
         }
         if (this.isLeadingZero)
             this.intValue *= d;
         else if (this.decPtStartPos < 0)
             this.intValue = this.intValue * 10n + (this.intValue > 0 ? 1n : -1n) * d;
         this.isLeadingZero = false;
-        return true;
     }
 
     private startExplicitRealNumber(char: string, next: string) {
         this.numberStartPos = this.pos;
         this.numberType = "r";
-        this.pushStack(this.consumeLeadingRealNumberWhitespace);
+        this.pushConsumer(this.consumeLeadingRealNumberWhitespace);
         this.consumeLeadingRealNumberWhitespace(char, next);
     }
     private consumeLeadingRealNumberWhitespace(char: string, next: string) {
         // on first entry, char is the character before the number
         if (next.trimStart().length === 0) {
-            return true;
+            return;
         }
         if (next === '-' || next === '+' || next === '.' || isAsciiNumber(next)) {
-            this.popStack();
-            this.pushStack(this.consumePotentialLeadingSign);
+            this.popConsumer();
+            this.pushConsumer(this.consumePotentialLeadingSign);
         }
         else if ('nNiI'.indexOf(next) >= 0) {
-            this.popStack();
-            this.pushStack(this.consumeNamedNumberOrNull);
+            this.popConsumer();
+            this.pushConsumer(this.consumeNamedNumberOrNull);
         }
-        return true;
     }
     private startImplicitNumber(char: string, next: string) {
         this.intValue = 1n;
         this.numberStartPos = this.pos;
         this.numberType = null;
-        this.pushStack(this.consumePotentialLeadingSign);
+        this.pushConsumer(this.consumePotentialLeadingSign);
         this.consumePotentialLeadingSign(char, next);
     }
 
@@ -1291,9 +1289,9 @@ class Parser {
     private booleanStartPos = -1;
     private startExplicitBoolean(next: string) {
         if (next.trimStart().length === 0)
-            this.pushStack(this.consumeLeadingBooleanWhitespace);
+            this.pushConsumer(this.consumeLeadingBooleanWhitespace);
         else if (isAsciiLetter(next))
-            this.pushStack(this.consumeBoolean);
+            this.pushConsumer(this.consumeBoolean);
         else {
             // error
         }
@@ -1302,18 +1300,17 @@ class Parser {
     private consumeLeadingBooleanWhitespace(char: string, next: string) {
         // on first entry, char is the first whitespace character after ?
         if (isAsciiLetter(next)) {
-            this.popStack();
-            this.pushStack(this.consumeBoolean);
+            this.popConsumer();
+            this.pushConsumer(this.consumeBoolean);
         }
         else if (next.trimStart().length !== 0) {
             // error
         }
-        return true;
     }
     private consumeBoolean(char: string, next: string) {
         // on first entry, char is the first text character in the boolean
         if (!isAsciiLetter(next)) {
-            this.popStack();
+            this.popConsumer();
             const text = this.document.substring(this.booleanStartPos + 1, this.pos + 1).trimStart();
             const tu = text.toUpperCase();
             if (tu === "TRUE")
@@ -1326,12 +1323,11 @@ class Parser {
                 // error
             }
         }
-        return true;
     }
 
 
     private startSingleLineStringValue(char: string, next: string) {
-        this.pushStack(this.consumeSingleLineStringValue);
+        this.pushConsumer(this.consumeSingleLineStringValue);
         this.singleLineStringStartPos = this.pos;
         this.consumeSingleLineStringValue(char, next);
     }
@@ -1339,42 +1335,39 @@ class Parser {
     private consumeSingleLineStringValue(char: string, next: string) {
         // on first entry, char is the opening `
         if (next === '\n') {
-            this.popStack();
+            this.popConsumer();
             const str = this.document.substring(this.singleLineStringStartPos + 1, this.pos + 1).trim().replace(/\s/g, ' ');
             const sStr = new XtnSStringImpl(str, undefined, {}, {});
             this.completeValue(sStr);
         }
-        return true;
     }
 
     private unquotedTextStartPos = -1;
     private startUnquotedText(char: string, next: string) {
         this.unquotedTextStartPos = this.pos;
-        this.pushStack(this.consumeUnquotedText);
+        this.pushConsumer(this.consumeUnquotedText);
         this.consumeUnquotedText(char, next);
     }
     private consumeUnquotedText(char: string, next: string) {
         // on first entry, char is the first character of the unquoted text
         if (isKeyLetter(next))
-            return true;
+            return;
         if (next !== '\n' && next.trimStart().length === 0) {
-            return true;
+            return;
         }
-        this.popStack();
+        this.popConsumer();
         const str = this.document.substring(this.unquotedTextStartPos, this.pos + 1).trimEnd().replace(/\s/g, ' ');
         const k = new XtnKeyImpl(str, false, {}, {});
-        const parent = this.getCurrentParent();
-        if (parent instanceof XtnKeyValuePairImpl) {
+        const scope = this.currentScope;
+        if (scope instanceof XtnKeyValuePairImpl) {
             this.interpretAndCompleteValue(k);
         }
         else {
             this.rawText = k;
         }
-        return true;
     }
     private consumeTagName(char: string, next: string) {
         // on first entry, the tag has already started from unquotedTextStartPos, and char is the first character where it is clear that the text must be a tag name.
-        return true;
     }
 }
 
