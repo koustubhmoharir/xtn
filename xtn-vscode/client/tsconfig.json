@@ -6,11 +6,11 @@
             "es2020"
         ],
         "outDir": "out",
-        "rootDir": "src",
+        "rootDir": "",
         "sourceMap": true
     },
     "include": [
-        "src"
+        ""
     ],
     "exclude": [
         "node_modules",

@@ -4,6 +4,7 @@ coverage
 # Output
 /client/out
 /server/out
+/dist
 *.vsix
 
 # Dependency directory

@@ -24,7 +24,10 @@ import {
     Position,
     TextDocument, TextEdit
 } from 'vscode-languageserver-textdocument';
-import { XtnArray, XtnComment, XtnDataElement, XtnElement, XtnErrorCode, XtnException, XtnObject, XtnText, breakIntoLines, convert_key, convert_simple_value, partition, trimEndOfLine } from './parser';
+// import { XtnArray, XtnComment, XtnDataElement, XtnElement, XtnErrorCode, XtnException, XtnObject, XtnText, breakIntoLines, convert_key, convert_simple_value, partition, trimEndOfLine } from './parser';
+
+import type { XtnObject, XtnParseError } from '../../xtnjs/dist/index'
+import { tryParseXtn } from '../../xtnjs/dist/index'
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -58,17 +61,17 @@ connection.onInitialize((params: InitializeParams) => {
         capabilities: {
             textDocumentSync: TextDocumentSyncKind.Incremental,
             // Tell the client that this server supports code completion.
-            completionProvider: {
-                triggerCharacters: ['{', '[', "'", ':', '+'],
-                resolveProvider: true
-            },
-            foldingRangeProvider: true,
-            documentFormattingProvider: true,
-            documentOnTypeFormattingProvider: {
-                firstTriggerCharacter: '-',
-                moreTriggerCharacter: [':', '\n']
-            },
-            documentRangeFormattingProvider: true
+            // completionProvider: {
+            //     triggerCharacters: ['{', '[', "'", ':', '+'],
+            //     resolveProvider: true
+            // },
+            // foldingRangeProvider: true,
+            // documentFormattingProvider: true,
+            // documentOnTypeFormattingProvider: {
+            //     firstTriggerCharacter: '-',
+            //     moreTriggerCharacter: [':', '\n']
+            // },
+            // documentRangeFormattingProvider: true
         }
     };
     if (hasWorkspaceFolderCapability) {
@@ -109,9 +112,8 @@ const documentSettings: Map<string, Thenable<ExampleSettings>> = new Map();
 
 interface ParsedDocument {
     version: number;
-    lines?: string[];
-    obj?: XtnObject;
-    error?: XtnException;
+    obj: XtnObject;
+    errors: XtnParseError[];
 }
 
 const parseCache: Map<string, ParsedDocument> = new Map();
@@ -119,21 +121,11 @@ function getParsedDocument(uri: string, doc?: TextDocument) {
     let entry = parseCache.get(uri);
     if (!doc) return entry;
     if (!entry || entry.version !== doc.version) {
-        let obj;
-        let lines = breakIntoLines(doc.getText());
-        let error;
-        try {
-            obj = XtnObject.load(lines);
-        }
-        catch (ex) {
-            if (ex instanceof XtnException)
-                error = ex;
-        }
+        const res = tryParseXtn(doc.getText());
         entry = ({
             version: doc.version,
-            obj,
-            lines,
-            error
+            obj: res.succeeded ? res.result : res.partial,
+            errors: res.succeeded ? [] : res.errors
         });
         parseCache.set(doc.uri, entry);
     }
@@ -189,42 +181,27 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
     // The validator creates diagnostics for all uppercase words length 2 and more
     const diagnostics: Diagnostic[] = [];
     const entry = getParsedDocument(textDocument.uri, textDocument);
-    const err = entry?.error;
-    if (err instanceof XtnException) {
-        const diagnostic: Diagnostic = {
-            severity: DiagnosticSeverity.Error,
-            range: {
-                start: {
-                    line: err.line_no,
-                    character: err.colStart
+    if (entry) {
+        for (const err of entry.errors) {
+            const start = err.start;
+            const end = err.end ?? start;
+            const diagnostic: Diagnostic = {
+                severity: DiagnosticSeverity.Error,
+                range: {
+                    start: {
+                        line: start.line ?? 0,
+                        character: start.column ?? 0
+                    },
+                    end: {
+                        line: end.line ?? 0,
+                        character: end.column ?? 0
+                    }
                 },
-                end: {
-                    line: err.line_no,
-                    character: err.colEnd
-                }
-            },
-            message: err.message,
-            source: 'xtn'
-        };
-        // if (hasDiagnosticRelatedInformationCapability) {
-        //     diagnostic.relatedInformation = [
-        //         {
-        //             location: {
-        //                 uri: textDocument.uri,
-        //                 range: Object.assign({}, diagnostic.range)
-        //             },
-        //             message: 'Spelling matters'
-        //         },
-        //         {
-        //             location: {
-        //                 uri: textDocument.uri,
-        //                 range: Object.assign({}, diagnostic.range)
-        //             },
-        //             message: 'Particularly for names'
-        //         }
-        //     ];
-        // }
-        diagnostics.push(diagnostic);
+                message: err.message,
+                source: 'xtn'
+            };
+            diagnostics.push(diagnostic);
+        }
     }
     
 

@@ -1,0 +1,61 @@
+[{
+    "$tag": "Point",
+    "$args": [1.0, 2.0]
+},{
+    "$tag": "Point",
+    "$args": [1.0],
+    "y": 2.0
+},{
+    "$tag": "Point",
+    "$args": [],
+    "$opts": {
+        "x": 1.0
+    },
+    "y": 2.0
+},{
+    "$tag": "Point",
+    "$args": [],
+    "$opts": {
+        "x": 1.0
+    },
+    "y": 2.0
+},{
+    "$tag": "Point",
+    "$args": [],
+    "$opts": {
+        "x": 1.0,
+        "y": 2.0
+    }
+},{
+    "$tag": "Point",
+    "$args": [],
+    "$opts": {
+        "x": 1.0,
+        "y": 2.0
+    }
+},{
+    "$tag": {
+        "name": "Geometry.Point",
+        "segments": ["Geometry", "Point"]
+    }
+},{
+    "$tag": {
+        "name": "Geometry.Point",
+        "segments": ["Geometry", "Point"]
+    }
+},{
+    "$tag": {
+        "name": "Geometry.Point",
+        "segments": ["Geometry", "Point"]
+    }
+},{
+    "$tag": "Point"
+},{
+    "$tag": "Point",
+    "x": 1.0,
+    "y": 2.0
+},{
+    "$tag": "Point",
+    "x": 1.0,
+    "y": 2.0
+}]

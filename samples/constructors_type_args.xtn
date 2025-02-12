@@ -1,0 +1,9 @@
++= Geometry.Point<int<A,Geometry.B<C>>>
++= Geometry.Point < int > 
++= Point<int<A,B<C>>>
++= Point<int<A>>
++= Point < int < A > > 
++= Point < int > 
++= Point < int , double >()
++= Point < int , double > 
++= Point<int,double>

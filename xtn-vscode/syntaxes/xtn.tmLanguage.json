@@ -3,98 +3,238 @@
 	"name": "xtn",
 	"patterns": [
 		{
-			"include": "#pairs"
+			"include": "#comments"
+		},
+		{
+			"include": "#value"
 		}
 	],
 	"repository": {
-		"pairs": {
+		"array": {
+			"begin": "\\[",
+			"beginCaptures": {
+				"0": {
+					"name": "punctuation.definition.array.begin.xtn"
+				}
+			},
+			"end": "\\]",
+			"endCaptures": {
+				"0": {
+					"name": "punctuation.definition.array.end.xtn"
+				}
+			},
+			"name": "meta.structure.array.xtn",
 			"patterns": [
 				{
-					"include": "#comment"
+					"include": "#comments"
 				},
 				{
-					"include": "#complex"
+					"include": "#value"
 				},
 				{
-					"include": "#block"
+					"match": ",",
+					"name": "punctuation.separator.array.xtn"
 				},
 				{
-					"include": "#pair"
+					"match": "[^\\s\\]]",
+					"name": "invalid.illegal.expected-array-separator.xtn"
 				}
 			]
 		},
-		"comment": {
-			"name": "comment.line.number-sign",
-			"match": "(\\s*#.*\\n)"
-		},
-		"pair": {
-			"name": "entity",
-			"match": "(?:(\\+)|([^-+{}\\[\\]:'\\s][^{}\\[\\]:']*))\\s*[:]\\s*(.*)\\s*\\n",
-			"captures": {
-				"1": {
-					"name": "keyword"
-				},
-				"2": {
-					"name": "keyword"
-				},
-				"3": {
-					"name": "constant.other"
-				}
-			}
-		},
-		"block": {
-			"name": "entity",
-			"begin": "\\s*(?:(\\+)|([^-+{}\\[\\]:'\\s][^{}\\[\\]:']*))\\s*(\\[\\]|\\{\\})\\s*([:])\\s*\\n",
-			"beginCaptures": {
-				"1": {
-					"name": "keyword"
-				},
-				"2": {
-					"name": "keyword"
-				},
-				"3": {
-					"name": "keyword"
-				},
-				"4": {
-					"name": "keyword.operator"
-				}
-			},
-			"end": "----",
-			"endCaptures": {
-				"0": {
-					"name": "keyword"
-				}
-			},
+		"comments": {
 			"patterns": [
 				{
-					"include": "#pairs"
+					"match": "/{2}.*",
+					"name": "comment.single.xtn"
+				},
+				{
+					"begin": "/\\*\\*(?!/)",
+					"captures": {
+						"0": {
+							"name": "punctuation.definition.comment.xtn"
+						}
+					},
+					"end": "\\*/",
+					"name": "comment.block.documentation.xtn"
+				},
+				{
+					"begin": "/\\*",
+					"captures": {
+						"0": {
+							"name": "punctuation.definition.comment.xtn"
+						}
+					},
+					"end": "\\*/",
+					"name": "comment.block.xtn"
 				}
 			]
 		},
-		"complex": {
-			"name": "entity",
-			"begin": "(\\s*)(?:(\\+)|([^-+{}\\[\\]:'\\s][^{}\\[\\]:']*))\\s*('')\\s*([:])\\s*\\n",
+		"constant": {
+			"match": "\\b(?:true|false|null|Infinity|NaN)\\b",
+			"name": "constant.language.xtn"
+		},
+		"infinity": {
+			"match": "(-)*\\b(?:Infinity|NaN)\\b",
+			"name": "constant.language.xtn"
+		},
+		"key": {
+			"name": "string.key.xtn",
+			"patterns": [
+				{
+					"include": "#stringSingle"
+				},
+				{
+					"include": "#stringDouble"
+				},
+				{
+					"match": "[a-zA-Z0-9_-]",
+					"name": "string.key.xtn"
+				}
+			]
+		},
+		"number": {
+			"patterns": [
+				{
+					"comment": "handles hexadecimal numbers",
+					"match": "(0x)[0-9a-fA-f]*",
+					"name": "constant.hex.numeric.xtn"
+				},
+				{
+					"comment": "handles integer and decimal numbers",
+					"match": "[+-.]?(?=[1-9]|0(?!\\d))\\d+(\\.\\d+)?([eE][+-]?\\d+)?",
+					"name": "constant.dec.numeric.xtn"
+				}
+			]
+		},
+		"object": {
+			"begin": "\\{",
 			"beginCaptures": {
-				"2": {
-					"name": "keyword"
-				},
-				"3": {
-					"name": "keyword"
-				},
-				"4": {
-					"name": "keyword"
-				},
-				"5": {
-					"name": "keyword.operator"
+				"0": {
+					"name": "punctuation.definition.dictionary.begin.xtn"
 				}
 			},
-			"end": "^\\1----\\s*\n",
+			"comment": "xtn object",
+			"end": "\\}",
 			"endCaptures": {
 				"0": {
-					"name": "keyword"
+					"name": "punctuation.definition.dictionary.end.xtn"
 				}
 			},
-			"contentName": "constant.other"
+			"name": "meta.structure.dictionary.xtn",
+			"patterns": [
+				{
+					"include": "#comments"
+				},
+				{
+					"comment": "the xtn object key",
+					"include": "#key"
+				},
+				{
+					"begin": ":",
+					"beginCaptures": {
+						"0": {
+							"name": "punctuation.separator.dictionary.key-value.xtn"
+						}
+					},
+					"end": "(,)|(?=\\})",
+					"endCaptures": {
+						"1": {
+							"name": "punctuation.separator.dictionary.pair.xtn"
+						}
+					},
+					"name": "meta.structure.dictionary.value.xtn",
+					"patterns": [
+						{
+							"comment": "the xtn object value",
+							"include": "#value"
+						},
+						{
+							"match": "[^\\s,]",
+							"name": "invalid.illegal.expected-dictionary-separator.xtn"
+						}
+					]
+				},
+				{
+					"match": "[^\\s\\}]",
+					"name": "invalid.illegal.expected-dictionary-separator.xtn"
+				}
+			]
+		},
+		"stringDouble": {
+			"begin": "[\"]",
+			"beginCaptures": {
+				"0": {
+					"name": "punctuation.definition.string.begin.xtn"
+				}
+			},
+			"end": "[\"]",
+			"endCaptures": {
+				"0": {
+					"name": "punctuation.definition.string.end.xtn"
+				}
+			},
+			"name": "string.quoted.xtn",
+			"patterns": [
+				{
+					"match": "(?x:                # turn on extended mode\n                     \\\\                # a literal backslash\n                     (?:               # ...followed by...\n                       [\"\\\\/bfnrt]     # one of these characters\n                       |               # ...or...\n                       u               # a u\n                       [0-9a-fA-F]{4}  # and four hex digits\n                     )\n                   )",
+					"name": "constant.character.escape.xtn"
+				},
+				{
+					"match": "\\\\.",
+					"name": "invalid.illegal.unrecognized-string-escape.xtn"
+				}
+			]
+		},
+		"stringSingle": {
+			"begin": "[']",
+			"beginCaptures": {
+				"0": {
+					"name": "punctuation.definition.string.begin.xtn"
+				}
+			},
+			"end": "[']",
+			"endCaptures": {
+				"0": {
+					"name": "punctuation.definition.string.end.xtn"
+				}
+			},
+			"name": "string.quoted.xtn",
+			"patterns": [
+				{
+					"match": "(?x:                # turn on extended mode\n                     \\\\                # a literal backslash\n                     (?:               # ...followed by...\n                       [\"\\\\/bfnrt]     # one of these characters\n                       |               # ...or...\n                       u               # a u\n                       [0-9a-fA-F]{4}  # and four hex digits\n                     )\n                   )",
+					"name": "constant.character.escape.xtn"
+				},
+				{
+					"match": "\\\\.",
+					"name": "invalid.illegal.unrecognized-string-escape.xtn"
+				}
+			]
+		},
+		"value": {
+			"comment": "the 'value' diagram at http://json.org",
+			"patterns": [
+				{
+					"include": "#constant"
+				},
+				{
+					"include": "#infinity"
+				},
+				{
+					"include": "#number"
+				},
+				{
+					"include": "#stringSingle"
+				},
+				{
+					"include": "#stringDouble"
+				},
+				{
+					"include": "#array"
+				},
+				{
+					"include": "#object"
+				}
+			]
 		}
 	},
 	"scopeName": "source.xtn"

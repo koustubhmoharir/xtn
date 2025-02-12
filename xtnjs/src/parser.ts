@@ -22,6 +22,7 @@ export interface XtnPrimitive<T> extends XtnElement {
     readonly valueString: string;
     readonly explicit: boolean;
     readonly posFirstOffset?: number;
+    readonly childMarkerPosition?: XtnCharPosition;
 }
 
 export interface XtnSString extends XtnPrimitive<string> {
@@ -67,15 +68,22 @@ export interface XtnArray extends XtnElement {
     readonly items: readonly XtnValue[];
 }
 
+export interface XtnTagNameSegment extends XtnElement {
+    readonly type: "tagseg";
+    readonly name: string;
+    readonly args: readonly XtnTagName[] | null;
+}
+
 export interface XtnTagName extends XtnElement {
     readonly type: "tagname";
     readonly name: string;
+    readonly segments: readonly XtnTagNameSegment[];
 }
 
 export interface XtnConstructor extends XtnElement {
     readonly type: "constructor";
     readonly tag: XtnTagName;
-    readonly args: XtnArgs;
+    readonly args: XtnArgs | null;
     readonly initializer: XtnObject | null;
 }
 
@@ -104,7 +112,7 @@ export interface XtnDataObject {
 
 export interface XtnEnvironment {
     integerType?: "number" | "bigint";
-    construct?: (tagName: string, args: XtnDataValue[]) => XtnDataValue;
+    construct?: (tag: XtnTagName, args: XtnDataValue[] | null, opts: Record<string, XtnDataValue> | null) => XtnDataValue;
 }
 
 export interface XtnObject extends XtnValueOrPairList {
@@ -136,6 +144,7 @@ class XtnKeyImpl extends XtnElementImpl {
 }
 
 class XtnPrimitiveImpl<T> extends XtnElementImpl {
+    childMarkerPosition?: XtnCharPosition = undefined;
     constructor(
         public readonly value: T,
         public readonly valueString: string,
@@ -152,6 +161,7 @@ class XtnSStringImpl extends XtnElementImpl implements XtnSString {
     get type() { return "sstring" as const; }
     get valueString() { return this.value; }
     get explicit() { return true as const; }
+    childMarkerPosition?: XtnCharPosition = undefined;
 
     constructor(
         public readonly value: string,
@@ -172,6 +182,7 @@ class XtnQStringImpl extends XtnElementImpl implements XtnQString {
     get valueString() { return this.value; }
     get explicit() { return true as const; }
     get posFirstOffset() { return 0; }
+    childMarkerPosition?: XtnCharPosition = undefined;
 
     constructor(
         public readonly value: string,
@@ -191,6 +202,7 @@ class XtnMStringImpl extends XtnElementImpl implements XtnMString {
     get valueString() { return this.value; }
     get explicit() { return true as const; }
     get posFirstOffset() { return 0; }
+    childMarkerPosition?: XtnCharPosition = undefined;
 
     constructor(
         public readonly value: string,
@@ -269,6 +281,7 @@ class XtnReferenceImpl extends XtnElementImpl implements XtnReference {
     get type() { return "reference" as const; }
     get explicit() { return true as const; }
     get valueString() { return this.value; }
+    childMarkerPosition?: XtnCharPosition = undefined;
 
     constructor(
         public readonly value: string,
@@ -290,6 +303,7 @@ class XtnNullImpl extends XtnElementImpl implements XtnNull {
     get explicit() { return false as const; }
     get value() { return null; }
     get posFirstOffset() { return 0; }
+    childMarkerPosition?: XtnCharPosition = undefined;
 
     constructor(
         public readonly valueString: string,
@@ -307,6 +321,7 @@ class XtnNullImpl extends XtnElementImpl implements XtnNull {
 class XtnArrayImpl extends XtnElementImpl implements XtnArray {
     get type() { return "array" as const; }
     readonly items: XtnValueImpl[] = [];
+    childMarkerPosition?: XtnCharPosition = undefined;
 
     constructor(
         posStart?: XtnCharPosition,
@@ -320,24 +335,52 @@ class XtnArrayImpl extends XtnElementImpl implements XtnArray {
     }
 }
 
-class XtnTagNameImpl extends XtnElementImpl implements XtnTagName {
-    get type() { return "tagname" as const; }
+class XtnTagNameSegmentImpl extends XtnElementImpl implements XtnTagNameSegment {
+    readonly args: XtnTagNameImpl[] = [];
+    get type() { return "tagseg" as const; }
+
     constructor(
-        public readonly name: string,
+        readonly name: string,
         posStart?: XtnCharPosition,
         posEnd?: XtnCharPosition
     ) {
         super(posStart, posEnd);
     }
+    get fullName() {
+        if (this.args.length === 0)
+            return this.name;
+        return this.name + '<' + this.args.map(a => {
+            a.complete();
+            return a.name;
+        }).join(",") + '>';
+    }
+}
+
+class XtnTagNameImpl extends XtnElementImpl implements XtnTagName {
+    readonly segments: XtnTagNameSegmentImpl[] = [];
+    get type() { return "tagname" as const; }
+    name: string = "";
+
+    constructor(
+        posStart?: XtnCharPosition,
+        posEnd?: XtnCharPosition
+    ) {
+        super(posStart, posEnd);
+    }
+
+    complete() {
+        this.name = this.segments.map(s => s.fullName).join(".");
+    }
 }
 
 class XtnConstructorImpl extends XtnElementImpl implements XtnConstructor {
     get type() { return "constructor" as const; }
+    childMarkerPosition?: XtnCharPosition = undefined;
+    args: XtnArgsImpl | null = null;
+    initializer: XtnObjectImpl | null = null;
 
     constructor(
         public readonly tag: XtnTagNameImpl,
-        public readonly args: XtnArgsImpl,
-        public readonly initializer: XtnObjectImpl | null,
         posStart?: XtnCharPosition,
         posEnd?: XtnCharPosition
     ) {
@@ -348,8 +391,9 @@ class XtnConstructorImpl extends XtnElementImpl implements XtnConstructor {
         if (!env?.construct) {
             throw new Error("An env with a construct method must be provided");
         }
-        const args = this.args.items.map(a => a.type === "keyvaluepair" ? a.value._data(env) : a._data(env));
-        const obj = env.construct(this.tag.name, args);
+        const args = this.args?.items.filter(a => a.type !== "keyvaluepair").map(a => a._data(env)) || null;
+        const opts = this.args?.items.filter(a => a.type === "keyvaluepair").map(a => [a.key.name, a.value._data(env)]) || null;
+        const obj = env.construct(this.tag, args, opts ? Object.fromEntries(opts) : null);
         if (this.initializer) {
             if (obj == null) {
                 throw new Error(`Initializer could not be applied because the constructed object for ${this.tag.name} is ${obj === null ? "null" : "undefined"}`);
@@ -396,6 +440,7 @@ class XtnArgsImpl extends XtnValueOrPairListImpl implements XtnArgs {
 
 class XtnObjectImpl extends XtnValueOrPairListImpl implements XtnObject {
     get type() { return "object" as const; }
+    childMarkerPosition?: XtnCharPosition = undefined;
 
     constructor(
         posStart?: XtnCharPosition,
@@ -563,10 +608,10 @@ function isAsciiLetter(char: string) {
     return (cn >= 65 && cn <= 90) || (cn >= 97 && cn <= 122);
 }
 
-function isKeyStartLetter(char: string) {
+function isUnquotedTextStartLetter(char: string) {
     const cn = char.codePointAt(0)!;
-    //a-z or A-Z or - or _
-    return (cn >= 65 && cn <= 90) || (cn >= 97 && cn <= 122) || cn === 45 || cn === 95;
+    //a-z or A-Z or - or + or _
+    return (cn >= 65 && cn <= 90) || (cn >= 97 && cn <= 122) || cn === 45 || cn === 43 || cn === 95;
 }
 function isKeyLetter(char: string) {
     const cn = char.codePointAt(0)!;
@@ -576,10 +621,12 @@ function isKeyLetter(char: string) {
 
 class Parser {
     constructor(readonly document: string) {
-        this._scopeStates = [this._scopeState = { scope: this.rootObj, state: {} }];
-        this._consumers.push(this.consumeRootObject);
-        this._consumer = this.consumeRootObject;
+        this._scopeStates = [this._scopeState = { scope: this.rootObj, state: { childMarkerPosition: undefined } }];
+        this._consumers.push(this.consumeObject);
+        this._consumer = this.consumeObject;
     }
+    errors: XtnParseError[] = [];
+    succeeded = false;
 
     _consumers: ParserCharConsumer[] = [];
     _consumer: ParserCharConsumer;
@@ -604,16 +651,16 @@ class Parser {
 
     readonly rootObj = new XtnObjectImpl({}, {});
     private _scopeState: {
-        scope: XtnArrayImpl | XtnValueOrPairListImpl | XtnKeyValuePairImpl;
+        scope: XtnArrayImpl | XtnValueOrPairListImpl | XtnKeyValuePairImpl | XtnConstructorImpl | XtnTagNameImpl | XtnTagNameSegmentImpl;
         state: {
-            childMarker?: boolean;
+            childMarkerPosition: XtnCharPosition | undefined;
         }
     };
     private get currentScope() { return this._scopeState.scope; }
     private get currentScopeState() { return this._scopeState.state; }
     private _scopeStates: (Parser["_scopeState"])[];
-    private pushScope(scope: XtnArrayImpl | XtnValueOrPairListImpl | XtnKeyValuePairImpl) {
-        this._scopeStates.push(this._scopeState = { scope, state: {} });
+    private pushScope(scope: XtnArrayImpl | XtnValueOrPairListImpl | XtnKeyValuePairImpl | XtnConstructorImpl | XtnTagNameImpl | XtnTagNameSegmentImpl) {
+        this._scopeStates.push(this._scopeState = { scope, state: {childMarkerPosition: undefined} });
     }
     private popScope() {
         const ss = this._scopeStates;
@@ -637,12 +684,14 @@ class Parser {
                 lit = new XtnNullImpl(text, {}, {});
                 break;
             case 'INFINITY':
+            case '+INFINITY':
                 lit = new XtnRealNumberImpl(Number.POSITIVE_INFINITY, text, false, undefined, {}, {});
                 break;
             case '-INFINITY':
                 lit = new XtnRealNumberImpl(Number.NEGATIVE_INFINITY, text, false, undefined, {}, {});
                 break;
             case 'NAN':
+            case '+NAN':
                 lit = new XtnRealNumberImpl(Number.NaN, text, false, undefined, {}, {});
                 break;
             case '-NAN':
@@ -658,23 +707,31 @@ class Parser {
     }
     private completeValue(value: XtnValueImpl) {
         const scope = this.currentScope;
+        const cmp = this.currentScopeState.childMarkerPosition;
         if (scope instanceof XtnKeyValuePairImpl) {
             this.popConsumer();
             this.popScope();
             scope.value = value;
+            if (cmp)
+                value.childMarkerPosition = cmp;
             const parentScope = this.currentScope;
             if (parentScope instanceof XtnValueOrPairListImpl) {
                 parentScope.items.push(scope);
+                this.currentScopeState.childMarkerPosition = undefined;
             }
             else {
                 // error
             }
         }
-        else {
+        else if ("items" in scope) {
             scope.items.push(value);
+            this.currentScopeState.childMarkerPosition = undefined;
+        }
+        else {
+            // error
         }
     }
-    
+    private eof = false;
     parse() {
         let char = '\0';
         for (let next of this.document) {
@@ -685,6 +742,7 @@ class Parser {
             }
             char = next;
         }
+        this.eof = true;
         this.processChar(char, '\n');
         return this.rootObj;
     }
@@ -721,16 +779,37 @@ class Parser {
     private disableNext = false;
 
     commentStartPos = -1;
-    private startComment() {
+    private startComment(uptoEndOfLine: boolean) {
         this.commentStartPos = this.pos;
-        this.pushConsumer(this.consumeComment);
+        if (uptoEndOfLine)
+            this.pushConsumer(this.consumeEndOfLineComment);
+        else
+            this.pushConsumer(this.consumeBlockCommentStart);
     }
-    private consumeComment(char: string, next: string) {
+    private consumeEndOfLineComment(char: string, next: string) {
         // on first entry, char is the second character of //
         if (char === '\n') {
             this.logFragmentExcl("comment", this.commentStartPos);
             this.popConsumer();
         }
+    }
+    private blockCommentStart = -1;
+    private consumeBlockCommentStart(char: string, next: string) {
+        // on first entry, char is the second character of /*
+        this.blockCommentStart = this.pos - 1;
+        this.popConsumer();
+        this.pushConsumer(this.consumeBlockComment);
+    }
+    private consumeBlockComment(char: string, next: string) {
+        // on first entry, char is the first character after /*
+        if (char === '*' && next == '/') {
+            this.popConsumer();
+            this.pushConsumer(this.consumeBlockCommentEnd);
+        }
+    }
+    private consumeBlockCommentEnd(char: string, next: string) {
+        // on first entry, char is the last character of */
+        this.popConsumer();
     }
 
     private rawText: XtnKeyImpl | XtnQStringImpl | null = null;
@@ -951,16 +1030,13 @@ class Parser {
         this.pushConsumer(this.consumeObject);
         this.pushScope(new XtnObjectImpl({}, {}));
     }
-    private consumeRootObject(char: string, next: string) {
-        this.consumeInner(char, next, true, '');
-    }
     private consumeObject(char: string, next: string) {
-        this.consumeInner(char, next, true, '+');
+        this.consumeInner(char, next, true, true);
     }
     private consumePairValue(char: string, next: string) {
-        this.consumeInner(char, next, false, null);
+        this.consumeInner(char, next, false, false);
     }
-    private consumeInner(char: string, next: string, allowKeys: boolean, childChar: '+' | '' | null) {
+    private consumeInner(char: string, next: string, allowKeys: boolean, plusForChildren: boolean) {
         if (char.trimStart().length === 0) {
             return;
         }
@@ -983,11 +1059,21 @@ class Parser {
             this.interpretAndCompleteValue(this.rawText);
             this.rawText = null;
         }
-        if (char === '/' && next === '/') {
-            this.startComment();
+        if (char === '/') {
+            if (next === '/')
+                this.startComment(true);
+            else if (next === '*')
+                this.startComment(false);
+            else {
+                this.errors.push({ code: 0, start: { line: this.lineNo, column: this.colNo, index: this.pos }, end: undefined, message: "Unexpected character '/'. A comment starts with // or /*" });
+                // error
+            }
         }
         else if (char === '!') {
             this.disableNext = true;
+        }
+        else if (plusForChildren && char === '+') {
+            this.currentScopeState.childMarkerPosition = {line: this.lineNo, column: this.colNo, index: this.pos};
         }
         else if (char === '"' || char === "'") {
             this.startQuote(char, next);
@@ -1017,7 +1103,13 @@ class Parser {
             this.popConsumer();
             const obj = this.popScope();
             if (obj instanceof XtnObjectImpl) {
-                this.completeValue(obj);
+                const parent = this.currentScope;
+                if (parent instanceof XtnConstructorImpl) {
+                    this.popScope();
+                    this.completeValue(parent);
+                }
+                else
+                    this.completeValue(obj);
             }
         }
         else if (char === ']') {
@@ -1028,13 +1120,42 @@ class Parser {
             }
         }
         else if (char === ')') {
-
+            this.popConsumer();
+            const init = this.popScope();
+            if (init instanceof XtnArgsImpl) {
+                this.pushConsumer(this.consumeTrailingSpaceAfterArgs);
+                this.consumeTrailingSpaceAfterArgs(char, next);
+            }
+            else {
+                //error
+            }
+        }
+        else if (char === '=') {
+            this.startConstructor(char, next);
         }
         else if (isStartOfNumber(char, next)) {
             this.startImplicitNumber(char, next);
         }
-        else if (isKeyStartLetter(char)) {
+        else if (isUnquotedTextStartLetter(char)) {
             this.startUnquotedText(char, next);
+        }
+        else if (!plusForChildren && char === '+') {
+            this.currentScopeState.childMarkerPosition = { line: this.lineNo, column: this.colNo, index: this.pos };
+        }
+    }
+
+    private consumeTrailingSpaceAfterArgs(char: string, next: string) {
+        if (!this.eof && next.trimStart().length === 0)
+            return;
+        this.popConsumer();
+        if (next === '{') {
+            this.pushConsumer(this.consumeInitializer);
+        }
+        else {
+            const constr = this.popScope();
+            if (constr instanceof XtnConstructorImpl) {
+                this.completeValue(constr);
+            }
         }
     }
 
@@ -1043,7 +1164,7 @@ class Parser {
         this.pushScope(new XtnArrayImpl({}, {}));
     }
     private consumeArray(char: string, next: string) {
-        this.consumeInner(char, next, false, null);
+        this.consumeInner(char, next, false, false);
     }
 
     private numberStartPos = -1;
@@ -1366,14 +1487,168 @@ class Parser {
             this.rawText = k;
         }
     }
-    private consumeTagName(char: string, next: string) {
-        // on first entry, the tag has already started from unquotedTextStartPos, and char is the first character where it is clear that the text must be a tag name.
+
+    private constructorStartPos = -1;
+    private openAngles = 0;
+    private startConstructor(char: string, next: string) {
+        this.constructorStartPos = this.pos;
+        this.openAngles = 0;
+        const tagName = new XtnTagNameImpl({}, {});
+        this.pushScope(new XtnConstructorImpl(tagName))
+        this.pushScope(tagName);
+        this.pushConsumer(this.consumeLeadingSegmentSpace);
+        this.consumeLeadingSegmentSpace(char, next);
+    }
+    private consumeLeadingSegmentSpace(char: string, next: string) {
+        // on first entry char is the character before the segment starts
+        if (next.trimStart().length === 0)
+            return;
+        if (next === '_' || isAsciiLetter(next)) {
+            this.popConsumer();
+            this.segStartPos = this.pos + 1;
+            this.pushConsumer(this.consumeTagNameSegment);
+        }
+        else {
+            //error
+        }
+    }
+    private segStartPos = -1;
+    private consumeTagNameSegment(char: string, next: string) {
+        // on first entry, char is the first non-space character of a segment
+        if (isKeyLetter(next))
+            return;
+        const name = this.document.substring(this.segStartPos, this.pos + 1);
+        this.pushScope(new XtnTagNameSegmentImpl(name, {}, {}));
+        this.popConsumer();
+        this.pushConsumer(this.consumeTrailingSegNameSpace);
+        this.consumeTrailingSegNameSpace(char, next);
+    }
+    private consumeTrailingSegNameSpace(char: string, next: string) {
+        if (!this.eof && next.trimStart().length === 0)
+            return;
+        if (next === '<') {
+            ++this.openAngles;
+            this.popConsumer();
+            this.pushConsumer(this.consumeSegArgs);
+        }
+        else if (next === ',') {
+            this.popConsumer();
+            const arg = this.completeTagName();
+            (this.currentScope as XtnTagNameSegmentImpl).args.push(arg);
+        }
+        else if (next === '>') {
+            this.popConsumer();
+            const arg = this.completeTagName();
+            (this.currentScope as XtnTagNameSegmentImpl).args.push(arg);
+            --this.openAngles;
+            this.popConsumer();
+            this.pushConsumer(this.consumeTrailingSegNameSpace);
+        }
+        else if (next === '.') {
+            const seg = this.popScope() as XtnTagNameSegmentImpl;
+            (this.currentScope as XtnTagNameImpl).segments.push(seg);
+            this.popConsumer();
+            this.pushConsumer(this.consumeLeadingSegmentSpace);
+            this.consumeLeadingSegmentSpace(char, next);
+        }
+        else if (next === '(') {
+            if (this.openAngles === 0) {
+                this.completeTagName();
+                this.popConsumer();
+                this.pushConsumer(this.consumeConstrArgsOpen);
+            }
+            else {
+                // error
+            }
+        }
+        else if (next === '{') {
+            if (this.openAngles === 0) {
+                this.completeTagName();
+                this.popConsumer();
+                this.pushConsumer(this.consumeInitializer);
+            }
+            else {
+                // error
+            }
+        }
+        else {
+            if (this.openAngles === 0) {
+                this.completeTagName();
+                this.popConsumer();
+                const constr = this.popScope();
+                if (constr instanceof XtnConstructorImpl) {
+                    this.completeValue(constr);
+                }
+            }
+            else {
+                // error
+            }
+        }
+    }
+    private consumeSegArgs(char: string, next: string) {
+        const tagName = new XtnTagNameImpl({}, {});
+        this.pushScope(tagName);
+        this.pushConsumer(this.consumeLeadingSegmentSpace);
+        this.consumeLeadingSegmentSpace(char, next);
+    }
+    private completeTagName() {
+        const seg = this.popScope() as XtnTagNameSegmentImpl;
+        const tagName = this.popScope() as XtnTagNameImpl;
+        tagName.segments.push(seg);
+        tagName.complete();
+        return tagName;
+    }
+    private consumeConstrArgsOpen(char: string, next: string) {
+        const constr = this.currentScope as XtnConstructorImpl;
+        const constrArgs = new XtnArgsImpl({}, {});
+        constr.args = constrArgs;
+        this.pushScope(constrArgs);
+        this.popConsumer();
+        this.pushConsumer(this.consumeConstrArgs);
+    }
+    private consumeConstrArgs(char: string, next: string) {
+        this.consumeInner(char, next, true, false);
+    }
+    private consumeInitializer(char: string, next: string) {
+        const constr = this.currentScope as XtnConstructorImpl;
+        const init = new XtnObjectImpl({}, {});
+        constr.initializer = init;
+        this.pushScope(init);
+        this.popConsumer();
+        this.pushConsumer(this.consumeObject);
     }
 }
 
-export function parseXtn(document: string): XtnObject {
+export interface XtnParseError {
+    code: number;
+    start: XtnCharPosition;
+    end: XtnCharPosition | undefined;
+    message: string;
+}
+
+type ParseResult = { succeeded: true; result: XtnObject; } | { succeeded: false; partial: XtnObject; errors: XtnParseError[]; }
+
+export function parseXtn(document: string): XtnObject{
+    const pr = tryParseXtn(document);
+    if (pr.succeeded) return pr.result;
+    throw new Error(pr.errors[0].message);
+}
+export function tryParseXtn(document: string): ParseResult {
     const p = new Parser(document);
-    return p.parse();
+    const result = p.parse();
+    if (p.errors.length === 0) {
+        return ({
+            succeeded: true,
+            result
+        });
+    }
+    else {
+        return ({
+            succeeded: false,
+            partial: result,
+            errors: p.errors
+        })
+    }
 }
 
 function isStringValueSingleLine(value: string) {
@@ -1387,17 +1662,15 @@ function increaseIndent(indent: string) {
     return indent + (indent && indent[0] === '\t' ? '\t' : '    ');
 }
 
-function writeStringValue(value: string, strs: string[], indent: string, afterKey: boolean) {
+function writeStringValue(value: string, strs: string[], indent: string) {
     if (isStringValueSingleLine(value)) {
         strs.push("` ");
         strs.push(value);
     }
     else if (value.match(/\r/)) {
-        if (afterKey) strs.push(' ');
         strs.push(JSON.stringify(value));
     }
     else {
-        if (afterKey) strs.push(' ');
         strs.push('"""\n');
         const innerIndent = increaseIndent(indent);
         for (const line of value.split('\n')) {
@@ -1410,12 +1683,12 @@ function writeStringValue(value: string, strs: string[], indent: string, afterKe
     }
 }
 
-function writeValue(element: XtnValue, strs: string[], indent: string, afterKey: boolean): void {
+function writeValue(element: XtnValue, strs: string[], indent: string): void {
     switch (element.type) {
         case "sstring":
         case "qstring":
         case "mstring":
-            writeStringValue(element.value, strs, indent, afterKey);
+            writeStringValue(element.value, strs, indent);
             return;
         case "integer":
             strs.push('% ');
@@ -1434,27 +1707,24 @@ function writeValue(element: XtnValue, strs: string[], indent: string, afterKey:
             strs.push(element.value);
             return;
         case "null":
-            if (afterKey) strs.push(' ');
             strs.push('null');
             return;
         case "array":
-            if (afterKey) strs.push(' ');
             strs.push('[\n');
             writeInner(element, strs, increaseIndent(indent));
             strs.push(indent);
             strs.push(']');
             return;
         case "object":
-            if (afterKey) strs.push(' ');
             strs.push('{\n');
             writeInner(element, strs, increaseIndent(indent));
             strs.push(indent);
             strs.push('}');
             return;
         case "constructor":
-            if (afterKey) strs.push(' ');
+            strs.push("= ");
             strs.push(element.tag.name);
-            if (element.args.items.length) {
+            if (element.args?.items.length) {
                 strs.push('(\n');
                 writeInner(element.args, strs, increaseIndent(indent));
                 if (element.initializer)
@@ -1497,12 +1767,12 @@ function writeInner(element: XtnArgs | XtnObject | XtnArray, strs: string[], ind
         if (item.type === "keyvaluepair") {
             strs.push(indent);
             writeKey(item.key, strs);
-            strs.push(' :');
-            writeValue(item.value, strs, indent, true);
+            strs.push(': ');
+            writeValue(item.value, strs, indent);
             strs.push('\n');
         }
         else {
-            writeValue(item, strs, indent, false);
+            writeValue(item, strs, indent);
             strs.push('\n');
         }
     }

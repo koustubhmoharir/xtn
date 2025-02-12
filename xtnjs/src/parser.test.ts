@@ -1,6 +1,6 @@
 import { test, expect } from "vitest";
 import { loadJson, loadXtn } from "./testutils";
-import { children } from "./parser";
+import { children, type XtnEnvironment, type XtnTagName, type XtnTagNameSegment } from "./parser";
 
 test('match_sample1', () => {
     const xtn = loadXtn('sample1').data();
@@ -138,4 +138,51 @@ test('match_strings_ml', () => {
     const json = loadJson('strings_ml');
 
     expect(xtn).toEqual(json);
+});
+
+function segToJSON(seg: XtnTagNameSegment) {
+    if (seg.args?.length) {
+        return {
+            name: seg.name,
+            args: seg.args.map(a => tagToJSON(a))
+        };
+    }
+    else {
+        return seg.name;
+    }
+}
+function tagToJSON(tag: XtnTagName): any {
+    if (tag.segments.length > 1 || tag.segments[0].args?.length) {
+        return ({
+            name: tag.name,
+            segments: tag.segments.map(s => segToJSON(s))
+        });
+    }
+    return tag.name;
+}
+
+const env: XtnEnvironment = {
+    construct(tag, args, opts) {
+        const obj = { $tag: tagToJSON(tag) } as any;
+        if (args && opts) {
+            obj.$args = args;
+            if (Object.keys(opts).length > 0)
+                obj.$opts = opts;
+        }
+        return obj;
+    },
+};
+
+test('match_constructors', () => {
+    const xtn = loadXtn('constructors').data(env);
+    const json = loadJson('constructors');
+
+    expect(xtn[children]).toEqual(json);
+});
+
+test('match_constructors_type_args', () => {
+    const xtn = loadXtn('constructors_type_args').data(env);
+    const json = loadJson('constructors_type_args');
+
+    expect(xtn[children]).toEqual(json);
 });

@@ -1,0 +1,41 @@
++= Point(~ 1, ~2) {
+}
++= Point(
+    ~ 1
+){
+    y: ~ 2
+}
++= Point(
+    x: ~ 1
+){
+    y: ~ 2
+}
++= Point(
+    x: ~ 1
+)
+{
+    y: ~ 2
+}
++= Point(
+    x: ~ 1
+    y: ~ 2
+)
++= Point (
+    x: ~ 1
+    y: ~ 2
+)
++= Geometry
+ . 
+ Point { }
++= Geometry . Point { }
++= Geometry.Point { }
++= Point
+{}
++= Point {
+    x: ~ 1
+    y: ~ 2
+}
++= Point{
+    x: ~ 1
+    y: ~ 2
+}

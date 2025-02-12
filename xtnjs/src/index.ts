@@ -1,1 +1,2 @@
-export { parseXtn } from './parser';
+export type * from './parser';
+export * from './parser';

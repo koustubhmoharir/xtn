@@ -9,10 +9,10 @@
         "sourceMap": true,
         "strict": true,
         "outDir": "out",
-        "rootDir": "src"
+        "rootDir": ""
     },
     "include": [
-        "src"
+        ""
     ],
     "exclude": [
         "node_modules",
