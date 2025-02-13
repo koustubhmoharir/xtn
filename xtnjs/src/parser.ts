@@ -1,5 +1,13 @@
 type ParserCharConsumer = (c: string, n: string) => void;
 
+export enum XtnParseErrorCode {
+    UnexpectedSlash = 1,
+    UnexpectedEndOfFile = 2,
+    InvalidEscapeSequence = 3,
+    UnescapedLF = 4,
+    UnescapedCR = 5,
+    UnescapedCRLF = 6,
+}
 
 export interface XtnCharPosition {
     readonly line?: number;
@@ -472,11 +480,16 @@ class XtnObjectImpl extends XtnValueOrPairListImpl implements XtnObject {
     }
 }
 
-function parseJson5String(str: string) {
+function parseJson5String(str: string, start: XtnCharPosition, errors: XtnParseError[]) {
     const cps = [];
     let escape = 0;
     let escdCR = false;
+    let cr = false;
     let hex = 0n;
+    let hexEsc = '';
+    let curLineNo = start.line!;
+    let curColNo = start.column! + 1;
+    let curIndex = start.index! + 1;
     for (const c of str.substring(1, str.length - 1)) {
         if (escape !== 0) {
             if (escape === 1) {
@@ -489,6 +502,8 @@ function parseJson5String(str: string) {
                         escdCR = true;
                         break;
                     case '\n':
+                        curLineNo++;
+                        curColNo = -1;
                         break;
                     case '\u2028':
                     case '\u2029':
@@ -520,15 +535,17 @@ function parseJson5String(str: string) {
                         break;
                     case 'x':
                         hex = 0n;
+                        hexEsc = '\\x';
                         escape = -1;
                         break;
                     case 'u':
                         hex = 0n;
+                        hexEsc = '\\u';
                         escape = -3;
                         break;
                     default:
                         if (isAsciiNumber(c)) {
-                            // error
+                            errors.push({ code: XtnParseErrorCode.InvalidEscapeSequence, start: { line: curLineNo, column: curColNo, index: curIndex }, end: undefined, message: "Backslash '\\' followed by a digit is not a valid escape sequence" });
                         }
                         else {
                             cps.push(c);
@@ -540,7 +557,7 @@ function parseJson5String(str: string) {
             else {
                 const h = hexDigit(c);
                 if (h === null) {
-                    //error
+                    errors.push({ code: XtnParseErrorCode.InvalidEscapeSequence, start: { line: curLineNo, column: curColNo, index: curIndex }, end: undefined, message: `Backslash ${hexEsc} must be followed by ${hexEsc[1] === 'x' ? '2' : '4'} digits` });
                     escape = 0;
                 }
                 else {
@@ -557,21 +574,38 @@ function parseJson5String(str: string) {
                 escdCR = false;
             }
             else {
-                // error: LF cannot appear without escaping
+                if (cr) {
+                    cr = false;
+                    errors.push({ code: XtnParseErrorCode.UnescapedCRLF, start: { line: curLineNo, column: curColNo - 1, index: curIndex - 1 }, end: undefined, message: "A carriage return + line feed character sequence cannot appear without being preceded by a '\\'. Use '\\r\\n' or '\\n' to insert the desired line ending character sequence or place a '\\' just before the end of the line to continue the string on the next line ignoring the line feed." });
+                }
+                else {
+                    errors.push({ code: XtnParseErrorCode.UnescapedLF, start: { line: curLineNo, column: curColNo, index: curIndex }, end: undefined, message: "A line feed (new line) character cannot appear without being preceded by a '\\'. Use '\\n' to insert a line feed character or place a '\\' just before the end of the line to continue the string on the next line ignoring the line feed." });
+                }
             }
+            curLineNo++;
+            curColNo = -1;
+            curIndex++;
         }
         else {
+            if (cr) {
+                errors.push({ code: XtnParseErrorCode.UnescapedCR, start: { line: curLineNo, column: curColNo - 1, index: curIndex - 1 }, end: undefined, message: "A carriage return character cannot appear without being preceded by a '\\'. Use '\\r' to insert a carriage return. Or place a '\\' just before the end of the line to continue the string on the next line ignoring the carriage return." });
+                curLineNo++;
+                curColNo = -1;
+                cr = false;
+            }
             escdCR = false;
             if (c === '\\') {
                 escape = 1;
             }
             else if (c == '\r') {
-                // error: CR cannot appear without escaping
+                cr = true;
             }
             else {
                 cps.push(c);
             }
         }
+        curColNo += c.length;
+        curIndex += c.length;
     }
     return cps.join('');
 }
@@ -742,8 +776,16 @@ class Parser {
             }
             char = next;
         }
+        const lastLineNo = this.lineNo;
+        const lastColNo = this.colNo + char.length;
+        const lastPos = this.pos + char.length;
         this.eof = true;
         this.processChar(char, '\n');
+        if (this._consumers.length > 1) {
+            if (this.consumer === this.consumeBlockComment) {
+                this.errors.push({ code: XtnParseErrorCode.UnexpectedEndOfFile, start: { line: lastLineNo, column: lastColNo, index: lastPos }, end: undefined, message: "Unexpected end of file. Comment has not been closed with '*/'" });
+            }
+        }
         return this.rootObj;
     }
     private crlf = false;
@@ -756,6 +798,7 @@ class Parser {
             else {
                 this.consumer('\n', next === '\r' ? '\n' : next);
                 this.lineNo++;
+                this.colNo = -1;
                 this.lineStartPos = this.pos + 1;
                 return true;
             }
@@ -764,10 +807,10 @@ class Parser {
             this.consumer(char, next === '\r' ? '\n' : next);
             if (this.crlf) {
                 this.pos++;
-                this.colNo++;
                 this.crlf = false;
             }
             this.lineNo++;
+            this.colNo = -1;
             this.lineStartPos = this.pos + 1;
             return true;
         }
@@ -815,6 +858,8 @@ class Parser {
     private rawText: XtnKeyImpl | XtnQStringImpl | null = null;
 
     jsonStrStartPos = -1;
+    jsonStrStartLine = -1;
+    jsonStrStartCol = -1;
     quoteStartPos = -1;
     quoteChar: string | null = null;
     private startQuote(char: string, next: string) {
@@ -825,6 +870,8 @@ class Parser {
             this.pushConsumer(this.consumeQuoted);
         else {
             this.jsonStrStartPos = this.pos;
+            this.jsonStrStartLine = this.lineNo;
+            this.jsonStrStartCol = this.colNo;
             this.pushConsumer(this.consumeJsonString);
         }
     }
@@ -1014,7 +1061,7 @@ class Parser {
         }
         else if (char === this.quoteChar) {
             const jStr = this.document.substring(this.jsonStrStartPos, this.pos + 1);
-            const qStr = new XtnQStringImpl(parseJson5String(jStr), {}, {});
+            const qStr = new XtnQStringImpl(parseJson5String(jStr, {line: this.jsonStrStartLine, column: this.jsonStrStartCol, index: this.jsonStrStartPos}, this.errors), {}, {});
             this.popConsumer();
             const scope = this.currentScope;
             if (scope instanceof XtnKeyValuePairImpl) {
@@ -1065,8 +1112,7 @@ class Parser {
             else if (next === '*')
                 this.startComment(false);
             else {
-                this.errors.push({ code: 0, start: { line: this.lineNo, column: this.colNo, index: this.pos }, end: undefined, message: "Unexpected character '/'. A comment starts with // or /*" });
-                // error
+                this.errors.push({ code: XtnParseErrorCode.UnexpectedSlash, start: { line: this.lineNo, column: this.colNo, index: this.pos }, end: undefined, message: "Unexpected character '/'. Use '//' or '/*' to begin a comment." });
             }
         }
         else if (char === '!') {

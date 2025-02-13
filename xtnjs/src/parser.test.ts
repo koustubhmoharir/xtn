@@ -1,6 +1,6 @@
 import { test, expect } from "vitest";
-import { loadJson, loadXtn } from "./testutils";
-import { children, type XtnEnvironment, type XtnTagName, type XtnTagNameSegment } from "./parser";
+import { loadJson, loadXtn, loadXtnErrors } from "./testutils";
+import { XtnParseErrorCode, children, type XtnEnvironment, type XtnTagName, type XtnTagNameSegment } from "./parser";
 
 test('match_sample1', () => {
     const xtn = loadXtn('sample1').data();
@@ -185,4 +185,65 @@ test('match_constructors_type_args', () => {
     const json = loadJson('constructors_type_args');
 
     expect(xtn[children]).toEqual(json);
+});
+
+test('error_early_eof_comment', () => {
+    const errors = loadXtnErrors('early_eof_comment');
+    expect(errors).toMatchObject([{
+        code: XtnParseErrorCode.UnexpectedEndOfFile,
+        start: { line: 3, column: 2 }
+    }]);
+});
+
+test('error_unexpected_slash', () => {
+    const errors = loadXtnErrors('unexpected_slash');
+    expect(errors).toMatchObject([{
+        code: XtnParseErrorCode.UnexpectedSlash,
+        start: { line: 0, column: 4 }
+    }, {
+        code: XtnParseErrorCode.UnexpectedSlash,
+        start: { line: 1, column: 7 }
+    }, {
+        code: XtnParseErrorCode.UnexpectedSlash,
+        start: { line: 2, column: 2 }
+    }, {
+        code: XtnParseErrorCode.UnexpectedSlash,
+        start: { line: 3, column: 1 }
+    }]);
+});
+
+test('error_string_errors', () => {
+    const errors = loadXtnErrors('string_errors');
+    expect(errors).toMatchObject([{
+        code: XtnParseErrorCode.InvalidEscapeSequence,
+        start: { line: 0, column: 4 }
+    }, {
+        code: XtnParseErrorCode.InvalidEscapeSequence,
+        start: { line: 3, column: 1 }
+    }, {
+        code: XtnParseErrorCode.InvalidEscapeSequence,
+        start: { line: 5, column: 17 }
+    }, {
+        code: XtnParseErrorCode.InvalidEscapeSequence,
+        start: { line: 7, column: 23 }
+    }, {
+        code: XtnParseErrorCode.UnescapedCRLF,
+        start: { line: 9, column: 7 }
+    }]);
+});
+
+test('error_string_errors2', () => {
+    const errors = loadXtnErrors('string_errors2');
+    expect(errors).toMatchObject([{
+        code: XtnParseErrorCode.UnescapedLF,
+        start: { line: 0, column: 7 }
+    }]);
+});
+
+test('error_string_errors3', () => {
+    const errors = loadXtnErrors('string_errors3');
+    expect(errors).toMatchObject([{
+        code: XtnParseErrorCode.UnescapedCR,
+        start: { line: 0, column: 7 }
+    }]);
 });
