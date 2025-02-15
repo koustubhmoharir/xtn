@@ -7,6 +7,8 @@ export enum XtnParseErrorCode {
     UnescapedLF = 4,
     UnescapedCR = 5,
     UnescapedCRLF = 6,
+    UnrecognizedToken = 7,
+    MissingKey = 8,
 }
 
 export interface XtnCharPosition {
@@ -44,7 +46,7 @@ export interface XtnQString extends XtnPrimitive<string> {
 }
 
 export interface XtnMString extends XtnPrimitive<string> {
-    readonly type: "mstring"
+    readonly type: "mstring";
     readonly explicit: true;
     readonly indentChar: string;
 }
@@ -59,6 +61,11 @@ export interface XtnRealNumber extends XtnPrimitive<number | null> {
 
 export interface XtnBoolean extends XtnPrimitive<boolean | null> {
     readonly type: "boolean";
+}
+
+export interface XtnErrorToken extends XtnPrimitive<string> {
+    readonly type: "errortoken";
+    readonly explicit: false;
 }
 
 export interface XtnReference extends XtnPrimitive<string> {
@@ -128,9 +135,9 @@ export interface XtnObject extends XtnValueOrPairList {
     data(env?: XtnEnvironment): XtnDataObject;
 }
 
-export type XtnValue = XtnSString | XtnQString | XtnMString | XtnInteger | XtnRealNumber | XtnBoolean | XtnReference | XtnNull | XtnArray | XtnConstructor | XtnObject;
+export type XtnValue = XtnSString | XtnQString | XtnMString | XtnInteger | XtnRealNumber | XtnBoolean | XtnReference | XtnNull | XtnErrorToken | XtnArray | XtnConstructor | XtnObject;
 
-export type XtnValueImpl = XtnSStringImpl | XtnQStringImpl | XtnMStringImpl | XtnIntegerImpl | XtnRealNumberImpl | XtnBooleanImpl | XtnReferenceImpl | XtnNullImpl | XtnArrayImpl | XtnConstructorImpl | XtnObjectImpl;
+export type XtnValueImpl = XtnSStringImpl | XtnQStringImpl | XtnMStringImpl | XtnIntegerImpl | XtnRealNumberImpl | XtnBooleanImpl | XtnReferenceImpl | XtnNullImpl | XtnErrorTokenImpl | XtnArrayImpl | XtnConstructorImpl | XtnObjectImpl;
 
 
 class XtnElementImpl {
@@ -323,6 +330,26 @@ class XtnNullImpl extends XtnElementImpl implements XtnNull {
 
     _data(env?: XtnEnvironment): null {
         return null;
+    }
+}
+
+class XtnErrorTokenImpl extends XtnElementImpl implements XtnErrorToken {
+    get type() { return "errortoken" as const; }
+    get valueString() { return this.value; }
+    get explicit() { return false as const; }
+    get posFirstOffset() { return 0; }
+    childMarkerPosition?: XtnCharPosition = undefined;
+
+    constructor(
+        public readonly value: string,
+        posStart?: XtnCharPosition,
+        posEnd?: XtnCharPosition
+    ) {
+        super(posStart, posEnd);
+    }
+
+    _data(env?: XtnEnvironment): string {
+        return this.value;
     }
 }
 
@@ -709,35 +736,33 @@ class Parser {
         let lit;
         switch (upper) {
             case 'TRUE':
-                lit = new XtnBooleanImpl(true, text, false, undefined, {}, {});
+                lit = new XtnBooleanImpl(true, text, false, undefined, value.posStart, value.posEnd);
                 break;
             case 'FALSE':
-                lit = new XtnBooleanImpl(false, text, false, undefined, {}, {});
+                lit = new XtnBooleanImpl(false, text, false, undefined, value.posStart, value.posEnd);
                 break;
             case 'NULL':
-                lit = new XtnNullImpl(text, {}, {});
+                lit = new XtnNullImpl(text, value.posStart, value.posEnd);
                 break;
             case 'INFINITY':
             case '+INFINITY':
-                lit = new XtnRealNumberImpl(Number.POSITIVE_INFINITY, text, false, undefined, {}, {});
+                lit = new XtnRealNumberImpl(Number.POSITIVE_INFINITY, text, false, undefined, value.posStart, value.posEnd);
                 break;
             case '-INFINITY':
-                lit = new XtnRealNumberImpl(Number.NEGATIVE_INFINITY, text, false, undefined, {}, {});
+                lit = new XtnRealNumberImpl(Number.NEGATIVE_INFINITY, text, false, undefined, value.posStart, value.posEnd);
                 break;
             case 'NAN':
             case '+NAN':
-                lit = new XtnRealNumberImpl(Number.NaN, text, false, undefined, {}, {});
+                lit = new XtnRealNumberImpl(Number.NaN, text, false, undefined, value.posStart, value.posEnd);
                 break;
             case '-NAN':
-                lit = new XtnRealNumberImpl(-Number.NaN, text, false, undefined, {}, {});
+                lit = new XtnRealNumberImpl(-Number.NaN, text, false, undefined, value.posStart, value.posEnd);
                 break;
+            default:
+                lit = new XtnErrorTokenImpl(text, value.posStart, value.posEnd)
+                this.errors.push({ code: XtnParseErrorCode.UnrecognizedToken, start: value.posStart!, end: value.posEnd, message: `The token ${text} is not recognized` });
         }
-        if (lit) {
-            this.completeValue(lit);
-        }
-        else {
-            // error
-        }
+        this.completeValue(lit);
     }
     private completeValue(value: XtnValueImpl) {
         const scope = this.currentScope;
@@ -1061,7 +1086,8 @@ class Parser {
         }
         else if (char === this.quoteChar) {
             const jStr = this.document.substring(this.jsonStrStartPos, this.pos + 1);
-            const qStr = new XtnQStringImpl(parseJson5String(jStr, {line: this.jsonStrStartLine, column: this.jsonStrStartCol, index: this.jsonStrStartPos}, this.errors), {}, {});
+            const qStrStart: XtnCharPosition = { line: this.jsonStrStartLine, column: this.jsonStrStartCol, index: this.jsonStrStartPos };
+            const qStr = new XtnQStringImpl(parseJson5String(jStr, qStrStart, this.errors), qStrStart, { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 });
             this.popConsumer();
             const scope = this.currentScope;
             if (scope instanceof XtnKeyValuePairImpl) {
@@ -1089,8 +1115,8 @@ class Parser {
         }
         if (allowKeys && char === ":") {
             if (!this.rawText) {
-                //error
-                this.rawText = new XtnKeyImpl("", false, {}, {});
+                this.rawText = new XtnKeyImpl("", false, {line: this.lineNo, column: this.colNo, index: this.pos}, {line: this.lineNo, column: this.colNo, index: this.pos});
+                this.errors.push({code:XtnParseErrorCode.MissingKey, start: this.rawText.posStart!, end: undefined, message: "Missing key before colon"});
             }
             const keyValuePair = new XtnKeyValuePairImpl(this.rawText instanceof XtnQStringImpl ? new XtnKeyImpl(this.rawText.value, true, this.rawText.posStart, this.rawText.posEnd) : this.rawText);
             this.pushScope(keyValuePair);
@@ -1519,14 +1545,15 @@ class Parser {
         // on first entry, char is the first character of the unquoted text
         if (isKeyLetter(next))
             return;
-        if (next !== '\n' && next.trimStart().length === 0) {
+        const scope = this.currentScope;
+        const isValue = scope instanceof XtnKeyValuePairImpl;
+        if (!isValue && next !== '\n' && next.trimStart().length === 0) {
             return;
         }
         this.popConsumer();
         const str = this.document.substring(this.unquotedTextStartPos, this.pos + 1).trimEnd().replace(/\s/g, ' ');
-        const k = new XtnKeyImpl(str, false, {}, {});
-        const scope = this.currentScope;
-        if (scope instanceof XtnKeyValuePairImpl) {
+        const k = new XtnKeyImpl(str, false, {line: this.lineNo, column: this.colNo - (this.pos - this.unquotedTextStartPos), index: this.unquotedTextStartPos}, {line: this.lineNo, column: this.colNo + 1, index: this.pos + 1});
+        if (isValue || this.eof) {
             this.interpretAndCompleteValue(k);
         }
         else {
@@ -1754,6 +1781,9 @@ function writeValue(element: XtnValue, strs: string[], indent: string): void {
             return;
         case "null":
             strs.push('null');
+            return;
+        case "errortoken":
+            strs.push(element.value);
             return;
         case "array":
             strs.push('[\n');

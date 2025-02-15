@@ -212,8 +212,8 @@ test('error_unexpected_slash', () => {
     }]);
 });
 
-test('error_string_errors', () => {
-    const errors = loadXtnErrors('string_errors');
+test('errors_string', () => {
+    const errors = loadXtnErrors('errors_string');
     expect(errors).toMatchObject([{
         code: XtnParseErrorCode.InvalidEscapeSequence,
         start: { line: 0, column: 4 }
@@ -232,18 +232,64 @@ test('error_string_errors', () => {
     }]);
 });
 
-test('error_string_errors2', () => {
-    const errors = loadXtnErrors('string_errors2');
+test('errors_string2', () => {
+    const errors = loadXtnErrors('errors_string2');
     expect(errors).toMatchObject([{
         code: XtnParseErrorCode.UnescapedLF,
         start: { line: 0, column: 7 }
     }]);
 });
 
-test('error_string_errors3', () => {
-    const errors = loadXtnErrors('string_errors3');
+test('errors_string3', () => {
+    const errors = loadXtnErrors('errors_string3');
     expect(errors).toMatchObject([{
         code: XtnParseErrorCode.UnescapedCR,
         start: { line: 0, column: 7 }
+    }]);
+});
+
+function convert_children(json: any) {
+    if (typeof json === "object") {
+        if ('$children' in json) {
+            const ch = json.$children;
+            delete json.$children;
+            json[children] = ch;
+            convert_children(ch);
+        }
+        for (const key in json) {
+            convert_children(json[key]);
+        }
+    }
+}
+
+test('match_space_sep1', () => {
+    const xtn = loadXtn('space_sep1').data(env);
+    const json = loadJson('space_sep1');
+    convert_children(json);
+    expect(xtn).toEqual(json);
+});
+
+test('errors_space_sep1', () => {
+    const errors = loadXtnErrors('errors_space_sep1');
+    expect(errors).toMatchObject([{
+        code: XtnParseErrorCode.UnrecognizedToken,
+        start: { line: 0, column: 5 },
+        end: { line: 0, column: 8 }
+    }, {
+        code: XtnParseErrorCode.UnrecognizedToken,
+        start: { line: 1, column: 5 },
+        end: { line: 1, column: 8 }
+    }, {
+        code: XtnParseErrorCode.UnrecognizedToken,
+        start: { line: 2, column: 5 },
+        end: { line: 2, column: 8 }
+    }]);
+});
+
+test('bad_key_in_obj1', () => {
+    const errors = loadXtnErrors('bad_key_in_obj1');
+    expect(errors).toMatchObject([{
+        code: XtnParseErrorCode.MissingKey,
+        start: { line: 3, column: 7 }
     }]);
 });
