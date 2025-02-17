@@ -36,6 +36,7 @@ key4: [
 
     // contains tabs
     """
+        \
         	Some lines start with a tab
         no tab here
         	starts with a tab and also ends with it	
@@ -44,6 +45,7 @@ key4: [
 ]
 
 key5: """
+    \
     	Some lines start with a tab
     no tab here
     	starts with a tab and also ends with it	

@@ -9,6 +9,7 @@ export enum XtnParseErrorCode {
     UnescapedCRLF = 6,
     UnrecognizedToken = 7,
     MissingKey = 8,
+    UnexpectedTextOnStartTripleQuotes = 9
 }
 
 export interface XtnCharPosition {
@@ -48,7 +49,7 @@ export interface XtnQString extends XtnPrimitive<string> {
 export interface XtnMString extends XtnPrimitive<string> {
     readonly type: "mstring";
     readonly explicit: true;
-    readonly indentChar: string;
+    readonly indent: string;
 }
 
 export interface XtnInteger extends XtnPrimitive<bigint | null> {
@@ -221,7 +222,7 @@ class XtnMStringImpl extends XtnElementImpl implements XtnMString {
 
     constructor(
         public readonly value: string,
-        public readonly indentChar: string,
+        public readonly indent: string,
         posStart?: XtnCharPosition,
         posEnd?: XtnCharPosition
     ) {
@@ -688,6 +689,7 @@ class Parser {
     }
     errors: XtnParseError[] = [];
     succeeded = false;
+    tabWidth = 4;
 
     _consumers: ParserCharConsumer[] = [];
     _consumer: ParserCharConsumer;
@@ -891,8 +893,10 @@ class Parser {
         // char is the starting " or '
         this.quoteChar = char;
         this.quoteStartPos = this.pos;
-        if (next === this.quoteChar)
+        if (next === this.quoteChar) {
+            this.cqCount = 0;
             this.pushConsumer(this.consumeQuoted);
+        }
         else {
             this.jsonStrStartPos = this.pos;
             this.jsonStrStartLine = this.lineNo;
@@ -916,30 +920,49 @@ class Parser {
         }
         // on second entry, char is the third " in an opening """
         if (this.cqCount === 1) {
-            this.mlIndent = null;
+            this.mlStringLines.length = 0;
+            this.cqCount = 2;
+            this.mlSep = null;
             if (next === '\\' || next.trimStart().length === 0) {
-                this.cqCount = 2;
-                this.mlSep = null;
                 this.popConsumer();
+                this.unexpTextOnTripleQuotesLineStart = -1;
                 this.pushConsumer(this.consumeStartTripleQuote);
             }
             else {
-                // error
+                // will report error at end of line
+                this.unexpTextOnTripleQuotesLineStart = this.pos + 1;
+                this.popConsumer();
+                this.pushConsumer(this.consumeRestOfLineAfterStartTripleQuotes);
             }
             return;
         }
     }
+    private unexpTextOnTripleQuotesLineStart = -1;
+    private consumeRestOfLineAfterStartTripleQuotes(char: string, next: string) {
+        if (next === '\n') {
+            this.errors.push({ code: XtnParseErrorCode.UnexpectedTextOnStartTripleQuotes, start: { line: this.lineNo, column: this.colNo - (this.pos - this.unexpTextOnTripleQuotesLineStart), index: this.unexpTextOnTripleQuotesLineStart }, end: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, message: "Triple quoted text must start on the next line after the triple quotes. Only a '\\r' is allowed on this line." });
+            this.mlStringLines.push(this.document.substring(this.unexpTextOnTripleQuotesLineStart, this.pos + 1));
+            this.cqCount = 3;
+            this.popConsumer();
+            this.pushConsumer(this.consumeStartTripleQuote);
+        }
+    }
     private mlSep: string | null = null;
     private consumeStartTripleQuote(char: string, next: string) {
-        // on first entry, char is whitespace or newline or \ after opening """
+        // on first entry, char is whitespace or newline or \ after opening """ and mlSep is null
         if (this.mlSep === null) {
             if (char === '\\') {
                 if (next === 'r') {
                     this.mlSep = '\r\n';
+                    this.unexpTextOnTripleQuotesLineStart = this.pos + 2;
                     return;
                 }
                 else {
-                    //error
+                    // will report error at end of line
+                    this.unexpTextOnTripleQuotesLineStart = this.quoteStartPos + 3;
+                    this.popConsumer();
+                    this.pushConsumer(this.consumeRestOfLineAfterStartTripleQuotes);
+                    this.consumeRestOfLineAfterStartTripleQuotes(char, next);
                 }
             }
             else if (char === '\n') {
@@ -950,7 +973,12 @@ class Parser {
                 return;
             }
             else {
-                //error
+                // will report error at end of line
+                this.unexpTextOnTripleQuotesLineStart = this.quoteStartPos + 3;
+                this.popConsumer();
+                this.pushConsumer(this.consumeRestOfLineAfterStartTripleQuotes);
+                this.consumeRestOfLineAfterStartTripleQuotes(char, next);
+                return;
             }
         }
         else if (this.cqCount === 2) {
@@ -963,116 +991,114 @@ class Parser {
                 return;
             }
             else {
-                //error
+                // will report error at end of line
+                if (this.unexpTextOnTripleQuotesLineStart < 0)
+                    this.unexpTextOnTripleQuotesLineStart = this.quoteStartPos + 3;
+                this.popConsumer();
+                this.pushConsumer(this.consumeRestOfLineAfterStartTripleQuotes);
                 return;
             }
         }
         if (this.cqCount === 3) {
-            const line = this.document.substring(this.lineStartPos, this.pos);
-            this.mlStartIndent = line.substring(0, line.length - line.trimStart().length);
-            if (this.mlStartIndent.length > 0) {
-                const ic = this.mlStartIndent[0];
-                if (ic === '\t') {
-                    if (this.mlStartIndent.match(/[^\t]/) != null) {
-                        // error
-                    }
-                    this.mlIndent = this.mlStartIndent + '\t';
-                }
-                else {
-                    if (ic === ' ') {
-                        if (this.mlStartIndent.match(/[^ ]/) != null) {
-                            // error
-                        }
-                    }
-                    else {
-                        // error
-                    }
-                    this.mlIndent = this.mlStartIndent + '    ';
-                }
-            }
-            else {
-                if (next === ' ') {
-                    this.mlIndent = '    ';
-                }
-                else if (next === '\t') {
-                    this.mlIndent = '\t';
-                }
-                else {
-                    if (next !== '\n')
-                        this.mlIndent = '    ';// this doesn't really matter
-                }
-            }
-            this.indentCharCount = 0;
+            this.curIndentWidth = 0;
             this.cqCount = 0;
-            this.mlStringLines.length = 0;
+            this.allowLeadingEscapeML = true;
             this.popConsumer();
-            if (this.mlIndent === null)
-                this.pushConsumer(this.consumeUnindentedML);
-            else
-                this.pushConsumer(this.consumeMultilineString);
+            this.pushConsumer(this.consumeStartingIndentMLString);
         }
     }
-    private consumeUnindentedML(char: string, next: string) {
-        // on first entry, char is the newline character that ends a blank line after the opening unindented """
-        // We want to find out what mlIndent should be. For this we need to find a non-blank line
-        this.mlStringLines.push('');
-        if (next === '\n') {
+    allowLeadingEscapeML = false;
+    private consumeStartingIndentMLString(char: string, next: string) {
+        // on first entry, char is the first character of the line after the line containing the starting """
+        if (char.trimStart().length === 0)
             return;
+        this.mlIndent = this.document.substring(this.lineStartPos, this.pos);
+        this.mlIndentWidth = 0;
+        this.curIndentCount = 0;
+        for (const ch of this.mlIndent) {
+            this.mlIndentWidth += (ch === '\t' ? (this.tabWidth - (this.mlIndentWidth % this.tabWidth)) : 1);
+            this.curIndentCount++;
         }
-        if (next === '\t') {
-            this.mlIndent = '\t';
+        this.curIndentWidth = this.mlIndentWidth;
+        this.popConsumer();
+        if (char === this.quoteChar && next === this.quoteChar) {
+            this.pushConsumer(this.consumePotentialEndML);
         }
         else {
-            this.mlIndent = '    ';
+            this.pushConsumer(this.consumeMultilineString);
+            this.consumeMultilineString(char, next);
         }
-        this.popConsumer();
-        this.pushConsumer(this.consumeMultilineString);
     }
-    private mlStartIndent: string | null = null;
-    private mlIndent: string | null = null;
-    private indentCharCount = 0;
+    private consumePotentialEndML(char: string, next: string) {
+        // on first entry, char is second " that may possibly end a triple quoted string with no lines or only blank lines
+        this.popConsumer();
+        if (next === this.quoteChar) {
+            this.pushConsumer(this.consumeMultilineEndQuotes);
+        }
+        else {
+            this.pushConsumer(this.consumeMultilineString);
+            this.consumeMultilineString(char, next);
+        }
+    }
+    private mlIndent = "";
+    private mlIndentWidth = 0;
+    private curIndentWidth = 0;
+    private curIndentCount = 0;
     private mlStringLines: string[] = [];
     private consumeMultilineString(char: string, next: string) {
-        // on first entry, char is the first character on the first non-blank line after the opening """
-        if (this.indentCharCount < this.mlIndent!.length) {
-            if (char === this.mlIndent![0]) {
-                ++this.indentCharCount;
-                return;
+        // on first entry, the first non-blank line after the opening """ has already started but not yet ended
+        if (char === '\n') {
+            let line = "";
+            if (this.curIndentWidth >= this.mlIndentWidth) {
+                line = this.document.substring(this.lineStartPos + this.curIndentCount, this.pos);
             }
-            if (char === '\n') {
-                this.mlStringLines.push('');
-                this.indentCharCount = 0;
-                return;
+            this.curIndentWidth = 0;
+            this.curIndentCount = 0;
+            if (this.allowLeadingEscapeML) {
+                this.allowLeadingEscapeML = false;
+                if (line.trim() === '\\') {
+                    return;
+                }
             }
-            if (char === this.quoteChar && next === this.quoteChar) {
-                this.cqCount = 0;
-                this.popConsumer();
-                this.pushConsumer(this.consumeMultilineEndQuotes);
-                return;
-            }
-        }
-        else if (char === '\n') {
-            const line = this.document.substring(this.lineStartPos + this.mlIndent!.length, this.pos);
-            // process escape sequence at end
             this.mlStringLines.push(line);
-            this.indentCharCount = 0;
+            return;
+        }
+        
+        const inIndent = this.curIndentWidth < this.mlIndentWidth;
+        if (inIndent) {
+            if (char.trimStart().length === 0) {
+                if (char !== this.mlIndent[this.curIndentCount]) {
+                    // error
+                }
+                this.curIndentWidth += (char === '\t' ? (this.tabWidth - (this.mlIndentWidth % this.tabWidth)) : 1);
+                this.curIndentCount++;
+                return;
+            }
+            this.mlIndentWidth = this.curIndentWidth;
+        }
+        if ((inIndent || (this.mlIndentWidth === 0 && this.colNo === 0)) && char === this.quoteChar && next === this.quoteChar) {
+            this.cqCount = 0;
+            this.popConsumer();
+            this.pushConsumer(this.consumePotentialEndML);
             return;
         }
     }
     private consumeMultilineEndQuotes(char: string, next: string) {
-        // on first entry, char is the second character in the closing """
-        if (this.cqCount === 0) {
-            if (next === this.quoteChar) {
-                ++this.cqCount;
-                return;
-            }
-            else {
-                // error
-            }
-        }
-        // on second entry, char is the last character in the closing """
+        // on first entry, char is the third character in the closing """
         this.popConsumer();
-        this.completeValue(new XtnMStringImpl(this.mlStringLines.join(this.mlSep!), this.mlIndent![0], {}, {}));
+        let indent = this.mlIndent;
+        if (this.allowLeadingEscapeML) {
+            if (indent.length > 0) {
+                const c = indent[indent.length - 1];
+                if (c === '\t')
+                    indent += c;
+                else
+                    indent += '    ';
+            }
+            else
+                indent += '    ';
+        }
+        this.completeValue(new XtnMStringImpl(this.mlStringLines.join(this.mlSep!), indent, {}, {}));
         this.mlStringLines.length = 0;
     }
     private escape = false;
@@ -1199,7 +1225,7 @@ class Parser {
                 this.consumeTrailingSpaceAfterArgs(char, next);
             }
             else {
-                //error
+                // error
             }
         }
         else if (char === '=') {
@@ -1347,7 +1373,7 @@ class Parser {
                 this.expStartPos = this.pos;
             }
             else if (!isAsciiNumber(next)) {
-                //error
+                // error
             }
             this.pushConsumer(this.consumeNumber);
             this.isLeadingZero = false;
@@ -1582,7 +1608,7 @@ class Parser {
             this.pushConsumer(this.consumeTagNameSegment);
         }
         else {
-            //error
+            // error
         }
     }
     private segStartPos = -1;

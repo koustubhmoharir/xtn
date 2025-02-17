@@ -1,5 +1,5 @@
 import { test, expect } from "vitest";
-import { loadJson, loadXtn, loadXtnErrors } from "./testutils";
+import { loadJson, loadXtn, loadXtnWithErrors } from "./testutils";
 import { XtnParseErrorCode, children, type XtnEnvironment, type XtnTagName, type XtnTagNameSegment } from "./parser";
 
 test('match_sample1', () => {
@@ -188,7 +188,7 @@ test('match_constructors_type_args', () => {
 });
 
 test('error_early_eof_comment', () => {
-    const errors = loadXtnErrors('early_eof_comment');
+    const { errors } = loadXtnWithErrors('early_eof_comment');
     expect(errors).toMatchObject([{
         code: XtnParseErrorCode.UnexpectedEndOfFile,
         start: { line: 3, column: 2 }
@@ -196,7 +196,7 @@ test('error_early_eof_comment', () => {
 });
 
 test('error_unexpected_slash', () => {
-    const errors = loadXtnErrors('unexpected_slash');
+    const { errors } = loadXtnWithErrors('unexpected_slash');
     expect(errors).toMatchObject([{
         code: XtnParseErrorCode.UnexpectedSlash,
         start: { line: 0, column: 4 }
@@ -213,7 +213,7 @@ test('error_unexpected_slash', () => {
 });
 
 test('errors_string', () => {
-    const errors = loadXtnErrors('errors_string');
+    const { errors } = loadXtnWithErrors('errors_string');
     expect(errors).toMatchObject([{
         code: XtnParseErrorCode.InvalidEscapeSequence,
         start: { line: 0, column: 4 }
@@ -233,7 +233,7 @@ test('errors_string', () => {
 });
 
 test('errors_string2', () => {
-    const errors = loadXtnErrors('errors_string2');
+    const { errors } = loadXtnWithErrors('errors_string2');
     expect(errors).toMatchObject([{
         code: XtnParseErrorCode.UnescapedLF,
         start: { line: 0, column: 7 }
@@ -241,7 +241,7 @@ test('errors_string2', () => {
 });
 
 test('errors_string3', () => {
-    const errors = loadXtnErrors('errors_string3');
+    const { errors } = loadXtnWithErrors('errors_string3');
     expect(errors).toMatchObject([{
         code: XtnParseErrorCode.UnescapedCR,
         start: { line: 0, column: 7 }
@@ -270,7 +270,7 @@ test('match_space_sep1', () => {
 });
 
 test('errors_space_sep1', () => {
-    const errors = loadXtnErrors('errors_space_sep1');
+    const { errors } = loadXtnWithErrors('errors_space_sep1');
     expect(errors).toMatchObject([{
         code: XtnParseErrorCode.UnrecognizedToken,
         start: { line: 0, column: 5 },
@@ -287,9 +287,33 @@ test('errors_space_sep1', () => {
 });
 
 test('bad_key_in_obj1', () => {
-    const errors = loadXtnErrors('bad_key_in_obj1');
+    const { errors } = loadXtnWithErrors('bad_key_in_obj1');
     expect(errors).toMatchObject([{
         code: XtnParseErrorCode.MissingKey,
         start: { line: 3, column: 7 }
     }]);
+});
+
+test('unexp_text_triple_string', () => {
+    const { errors, partial } = loadXtnWithErrors('unexp_text_triple_string');
+    const json = loadJson('unexp_text_triple_string');
+    expect(errors).toMatchObject([{
+        code: XtnParseErrorCode.UnexpectedTextOnStartTripleQuotes,
+        start: { line: 0, column: 6 },
+        end: { line: 0, column: 8 }
+    }, {
+        code: XtnParseErrorCode.UnexpectedTextOnStartTripleQuotes,
+        start: { line: 2, column: 6 },
+        end: { line: 2, column: 7 }
+    }, {
+        code: XtnParseErrorCode.UnexpectedTextOnStartTripleQuotes,
+        start: { line: 4, column: 9 },
+        end: { line: 4, column: 10 }
+    }, {
+        code: XtnParseErrorCode.UnexpectedTextOnStartTripleQuotes,
+        start: { line: 7, column: 9 },
+        end: { line: 7, column: 11 }
+        }]);
+    const xtn = partial.data();
+    expect(xtn).toEqual(json);
 });
