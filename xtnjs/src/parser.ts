@@ -9,7 +9,8 @@ export enum XtnParseErrorCode {
     UnescapedCRLF = 6,
     UnrecognizedToken = 7,
     MissingKey = 8,
-    UnexpectedTextOnStartTripleQuotes = 9
+    UnexpectedTextOnStartTripleQuotes = 9,
+    BadIndentation = 10,
 }
 
 export interface XtnCharPosition {
@@ -1015,9 +1016,13 @@ class Parser {
         this.mlIndent = this.document.substring(this.lineStartPos, this.pos);
         this.mlIndentWidth = 0;
         this.curIndentCount = 0;
+        this.prevIndentError = null;
         for (const ch of this.mlIndent) {
             this.mlIndentWidth += (ch === '\t' ? (this.tabWidth - (this.mlIndentWidth % this.tabWidth)) : 1);
             this.curIndentCount++;
+        }
+        if (this.mlIndentWidth === 0) {
+            this.errors.push({ code: XtnParseErrorCode.BadIndentation, start: { line: this.lineNo, column: this.colNo, index: this.pos }, end: undefined, message: "The content of a triple quoted string must be indented by at least one whitespace character" });
         }
         this.curIndentWidth = this.mlIndentWidth;
         this.popConsumer();
@@ -1036,6 +1041,9 @@ class Parser {
             this.pushConsumer(this.consumeMultilineEndQuotes);
         }
         else {
+            if (!this.allowLeadingEscapeML) {
+                this.errors.push({ code: XtnParseErrorCode.BadIndentation, start: { line: this.lineNo, column: this.colNo, index: this.pos }, end: undefined, message: "All lines in a triple quoted string that are not entirely whitespace must be indented identically" });
+            }
             this.pushConsumer(this.consumeMultilineString);
             this.consumeMultilineString(char, next);
         }
@@ -1044,6 +1052,7 @@ class Parser {
     private mlIndentWidth = 0;
     private curIndentWidth = 0;
     private curIndentCount = 0;
+    private prevIndentError: XtnParseError | null = null;
     private mlStringLines: string[] = [];
     private consumeMultilineString(char: string, next: string) {
         // on first entry, the first non-blank line after the opening """ has already started but not yet ended
@@ -1054,6 +1063,7 @@ class Parser {
             }
             this.curIndentWidth = 0;
             this.curIndentCount = 0;
+            this.prevIndentError = null;
             if (this.allowLeadingEscapeML) {
                 this.allowLeadingEscapeML = false;
                 if (line.trim() === '\\') {
@@ -1067,8 +1077,14 @@ class Parser {
         const inIndent = this.curIndentWidth < this.mlIndentWidth;
         if (inIndent) {
             if (char.trimStart().length === 0) {
-                if (char !== this.mlIndent[this.curIndentCount]) {
-                    // error
+                if (this.curIndentCount >= this.mlIndent.length || char !== this.mlIndent[this.curIndentCount]) {
+                    if (this.prevIndentError) {
+                        this.prevIndentError.end = { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 };
+                    }
+                    else {
+                        this.prevIndentError = { code: XtnParseErrorCode.BadIndentation, start: { line: this.lineNo, column: this.colNo, index: this.pos }, end: undefined, message: "All lines in a triple quoted string that are not entirely whitespace must be indented identically"};
+                        this.errors.push(this.prevIndentError);
+                    }
                 }
                 this.curIndentWidth += (char === '\t' ? (this.tabWidth - (this.mlIndentWidth % this.tabWidth)) : 1);
                 this.curIndentCount++;
@@ -1076,11 +1092,16 @@ class Parser {
             }
             this.mlIndentWidth = this.curIndentWidth;
         }
-        if ((inIndent || (this.mlIndentWidth === 0 && this.colNo === 0)) && char === this.quoteChar && next === this.quoteChar) {
-            this.cqCount = 0;
-            this.popConsumer();
-            this.pushConsumer(this.consumePotentialEndML);
-            return;
+        if (inIndent || (this.mlIndentWidth === 0 && this.colNo === 0)) {
+            if (char === this.quoteChar && next === this.quoteChar) {
+                this.cqCount = 0;
+                this.popConsumer();
+                this.pushConsumer(this.consumePotentialEndML);
+                return;
+            }
+            else if (inIndent) {
+                this.errors.push({ code: XtnParseErrorCode.BadIndentation, start: { line: this.lineNo, column: this.colNo, index: this.pos }, end: undefined, message: "All lines in a triple quoted string that are not entirely whitespace must be indented identically" });
+            }
         }
     }
     private consumeMultilineEndQuotes(char: string, next: string) {

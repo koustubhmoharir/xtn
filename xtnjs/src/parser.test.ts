@@ -313,7 +313,42 @@ test('unexp_text_triple_string', () => {
         code: XtnParseErrorCode.UnexpectedTextOnStartTripleQuotes,
         start: { line: 7, column: 9 },
         end: { line: 7, column: 11 }
-        }]);
+    }]);
+    const xtn = partial.data();
+    expect(xtn).toEqual(json);
+});
+
+test('errors_string4', () => {
+    const { errors, partial } = loadXtnWithErrors('errors_string4');
+    const json = loadJson('errors_string4');
+    expect(errors).toMatchObject([
+        {
+            code: XtnParseErrorCode.BadIndentation,
+            start: { line: 1, column: 0 }
+        },
+        {
+            code: XtnParseErrorCode.BadIndentation,
+            start: { line: 5, column: 3 }
+        },
+        {
+            code: XtnParseErrorCode.BadIndentation,
+            start: { line: 9, column: 0 }
+        },
+        {
+            code: XtnParseErrorCode.BadIndentation,
+            start: { line: 14, column: 0 }
+        },
+        {
+            code: XtnParseErrorCode.BadIndentation,
+            start: { line: 18, column: 0 },
+            end: { line: 18, column: 4 }
+        },
+        {
+            code: XtnParseErrorCode.BadIndentation,
+            start: { line: 22, column: 2 },
+            end: { line: 22, column: 4 }
+        }
+    ]);
     const xtn = partial.data();
     expect(xtn).toEqual(json);
 });
