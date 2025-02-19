@@ -11,6 +11,7 @@ export enum XtnParseErrorCode {
     MissingKey = 8,
     UnexpectedTextOnStartTripleQuotes = 9,
     BadIndentation = 10,
+    MissingBooleanOrNull = 11,
 }
 
 export interface XtnCharPosition {
@@ -1222,7 +1223,7 @@ class Parser {
             this.startDateTime();
         }
         else if (char === '?') {
-            this.startExplicitBoolean(next);
+            this.startExplicitBoolean(char, next);
         }
         else if (char === '}') {
             this.popConsumer();
@@ -1587,32 +1588,36 @@ class Parser {
 
     }
 
-    private booleanStartPos = -1;
-    private startExplicitBoolean(next: string) {
-        if (next.trimStart().length === 0)
-            this.pushConsumer(this.consumeLeadingBooleanWhitespace);
-        else if (isAsciiLetter(next))
+    private booleanStartPos: XtnCharPosition = {};
+    private startExplicitBoolean(char: string, next: string) {
+        this.booleanStartPos = { line: this.lineNo, column: this.colNo, index: this.pos };
+        if (isAsciiLetter(next))
             this.pushConsumer(this.consumeBoolean);
         else {
-            // error
+            this.pushConsumer(this.consumeLeadingBooleanWhitespace);
+            this.consumeLeadingBooleanWhitespace(char, next);
         }
-        this.booleanStartPos = this.pos;
+        return;
     }
     private consumeLeadingBooleanWhitespace(char: string, next: string) {
-        // on first entry, char is the first whitespace character after ?
+        // on first entry, char is ?
         if (isAsciiLetter(next)) {
             this.popConsumer();
             this.pushConsumer(this.consumeBoolean);
         }
-        else if (next.trimStart().length !== 0) {
-            // error
+        else if (next.trimStart().length !== 0 || this.eof) {
+            this.popConsumer();
+            const bp = this.booleanStartPos;
+            this.errors.push({ code: XtnParseErrorCode.MissingBooleanOrNull, start: { line: bp.line, column: bp.column! + 1, index: bp.index! + 1 }, end: undefined, message: "Expected true, false, or null" })
+            this.completeValue(new XtnBooleanImpl(null, "", true, undefined, {}, {}));
+            return;
         }
     }
     private consumeBoolean(char: string, next: string) {
         // on first entry, char is the first text character in the boolean
         if (!isAsciiLetter(next)) {
             this.popConsumer();
-            const text = this.document.substring(this.booleanStartPos + 1, this.pos + 1).trimStart();
+            const text = this.document.substring(this.booleanStartPos.index! + 1, this.pos + 1).trimStart();
             const tu = text.toUpperCase();
             if (tu === "TRUE")
                 this.completeValue(new XtnBooleanImpl(true, text, true, undefined, {}, {}));
@@ -1621,7 +1626,8 @@ class Parser {
             else if (tu === "NULL")
                 this.completeValue(new XtnBooleanImpl(null, text, true, undefined, {}, {}));
             else {
-                // error
+                this.errors.push({ code: XtnParseErrorCode.UnrecognizedToken, start: { line: this.lineNo, column: this.colNo + 1 - text.length, index: this.pos + 1 - text.length }, end: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, message: "Expected true, false, or null" });
+                this.completeValue(new XtnBooleanImpl(null, text, true, undefined, {}, {}));
             }
         }
     }

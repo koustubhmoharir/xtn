@@ -505,3 +505,36 @@ test('errors_numbers', () => {
         }
     ]);
 });
+
+
+
+test('errors_bool', () => {
+    const { errors, partial } = loadXtnWithErrors('errors_bool');
+    const json = loadJson('errors_bool');
+    convert_children(json);
+    const xtn = partial.data();
+    expect(xtn).toEqual(json);
+    expect(errors).toMatchObject([
+        {
+            code: XtnParseErrorCode.MissingBooleanOrNull,
+            start: { line: 1, column: 5 }
+        },
+        {
+            code: XtnParseErrorCode.MissingBooleanOrNull,
+            start: { line: 4, column: 5 }
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 6, column: 5 }
+        },
+        {
+            code: XtnParseErrorCode.MissingBooleanOrNull,
+            start: { line: 7, column: 4 }
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 8, column: 4 },
+            end: { line: 8, column: 9 }
+        }
+    ]);
+});
