@@ -116,6 +116,28 @@ test('match_explicit_reals3', () => {
     expect(xtn).toEqual(json);
 });
 
+
+test('match_implicit_neg_reals', () => {
+    const xtn = loadXtn('neg_reals').data();
+    const json = loadJson('neg_reals');
+
+    expect(xtn).toEqual(json);
+});
+
+test('match_implicit_neg_reals2', () => {
+    const xtn = loadXtn('neg_reals2').data();
+    const json = loadJson('neg_reals');
+
+    expect(xtn).toEqual(json);
+});
+
+test('match_explicit_neg_reals3', () => {
+    const xtn = loadXtn('neg_reals3').data();
+    const json = loadJson('neg_reals');
+
+    expect(xtn).toEqual(json);
+});
+
 test('test_named_reals', () => {
     const xtn = loadXtn('named_reals').data();
 
@@ -249,7 +271,7 @@ test('errors_string3', () => {
 });
 
 function convert_children(json: any) {
-    if (typeof json === "object") {
+    if (typeof json === "object" && json != null) {
         if ('$children' in json) {
             const ch = json.$children;
             delete json.$children;
@@ -351,4 +373,135 @@ test('errors_string4', () => {
     ]);
     const xtn = partial.data();
     expect(xtn).toEqual(json);
+});
+
+test('errors_numbers', () => {
+    const { errors, partial } = loadXtnWithErrors('errors_numbers');
+    const json = loadJson('errors_numbers');
+    convert_children(json);
+    const xtn = partial.data();
+    expect(xtn).toEqual(json);
+    expect(errors).toMatchObject([
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 0, column: 4 },
+            end: { line: 0, column: 7 }
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 1, column: 4 },
+            end: { line: 1, column: 9 }
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 2, column: 3 },
+            end: { line: 2, column: 6 }
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 3, column: 3 },
+            end: { line: 3, column: 8 }
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 4, column: 4 },
+            end: { line: 4, column: 7 }
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 5, column: 4 },
+            end: { line: 5, column: 9 }
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 6, column: 3 },
+            end: { line: 6, column: 6 }
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 7, column: 2 },
+            end: { line: 7, column: 5 }
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 8, column: 3 },
+            end: { line: 8, column: 6 }
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 9, column: 5 },
+            end: { line: 9, column: 6 },
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 10, column: 5 },
+            end: { line: 10, column: 13 },
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 11, column: 3 },
+            end: { line: 11, column: 5 },
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 12, column: 3 },
+            end: { line: 12, column: 5 },
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 13, column: 3 },
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 13, column: 5 },
+            end: { line: 13, column: 6 },
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 14, column: 5 },
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 14, column: 5 },
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 15, column: 6 },
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 16, column: 3 },
+            end: { line: 16, column: 4 },
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 16, column: 5 },
+            end: { line: 16, column: 6 },
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 17, column: 5 },
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 17, column: 5 },
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 18, column: 6 },
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 19, column: 5 },
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 20, column: 5 },
+            end: { line: 20, column: 8 },
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 21, column: 5 },
+        }
+    ]);
 });

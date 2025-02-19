@@ -1,0 +1,22 @@
+a:% nul
+b:% nulll
+c: nul
+d: nulll
+e:~ nul
+f:~ nulll
+g:%nul
+h:nul
+i:~nul
+j:% -p
+k:% -infinity
+l: -p
+m: +p
+n: - p
+o: -.p
+p: -1.p
+q: + p
+r: +.p
+s: +1.p
+t: 1.p
+u: 0xgab
+v: 0x

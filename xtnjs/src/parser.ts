@@ -640,7 +640,7 @@ function parseJson5String(str: string, start: XtnCharPosition, errors: XtnParseE
 }
 
 function isStartOfNumber(char: string, next: string) {
-    return ('-+.'.indexOf(char) >= 0 && isAsciiNumber(next)) || isAsciiNumber(char);
+    return ('-+'.indexOf(char) >= 0 && (next === '.' || isAsciiNumber(next))) || (char === '.' && isAsciiNumber(next)) || isAsciiNumber(char);
 }
 
 function isAsciiNumber(char: string) {
@@ -675,6 +675,11 @@ function isUnquotedTextStartLetter(char: string) {
     const cn = char.codePointAt(0)!;
     //a-z or A-Z or - or + or _
     return (cn >= 65 && cn <= 90) || (cn >= 97 && cn <= 122) || cn === 45 || cn === 43 || cn === 95;
+}
+function isWordStartLetter(char: string) {
+    const cn = char.codePointAt(0)!;
+    // 0-9 or a-z or A-Z or _
+    return (cn >= 65 && cn <= 90) || (cn >= 97 && cn <= 122) || cn === 95;
 }
 function isKeyLetter(char: string) {
     const cn = char.codePointAt(0)!;
@@ -763,7 +768,7 @@ class Parser {
                 break;
             default:
                 lit = new XtnErrorTokenImpl(text, value.posStart, value.posEnd)
-                this.errors.push({ code: XtnParseErrorCode.UnrecognizedToken, start: value.posStart!, end: value.posEnd, message: `The token ${text} is not recognized` });
+                this.errors.push({ code: XtnParseErrorCode.UnrecognizedToken, start: value.posStart!, end: value.posEnd, message: `The token '${text}' is not recognized` });
         }
         this.completeValue(lit);
     }
@@ -1021,12 +1026,13 @@ class Parser {
             this.mlIndentWidth += (ch === '\t' ? (this.tabWidth - (this.mlIndentWidth % this.tabWidth)) : 1);
             this.curIndentCount++;
         }
-        if (this.mlIndentWidth === 0) {
+        const potEnd = char === this.quoteChar && next === this.quoteChar;
+        if (this.mlIndentWidth === 0 && !potEnd) {
             this.errors.push({ code: XtnParseErrorCode.BadIndentation, start: { line: this.lineNo, column: this.colNo, index: this.pos }, end: undefined, message: "The content of a triple quoted string must be indented by at least one whitespace character" });
         }
         this.curIndentWidth = this.mlIndentWidth;
         this.popConsumer();
-        if (char === this.quoteChar && next === this.quoteChar) {
+        if (potEnd) {
             this.pushConsumer(this.consumePotentialEndML);
         }
         else {
@@ -1261,6 +1267,9 @@ class Parser {
         else if (!plusForChildren && char === '+') {
             this.currentScopeState.childMarkerPosition = { line: this.lineNo, column: this.colNo, index: this.pos };
         }
+        else {
+            // error
+        }
     }
 
     private consumeTrailingSpaceAfterArgs(char: string, next: string) {
@@ -1295,10 +1304,10 @@ class Parser {
         this.intValue = 1n;
         this.numberStartPos = this.pos;
         this.numberType = "i";
-        this.pushConsumer(this.consumeLeadingNumberWhitespace);
-        this.consumeLeadingNumberWhitespace(char, next);
+        this.pushConsumer(this.consumeLeadingIntegerWhitespace);
+        this.consumeLeadingIntegerWhitespace(char, next);
     }
-    private consumeLeadingNumberWhitespace(char: string, next: string) {
+    private consumeLeadingIntegerWhitespace(char: string, next: string) {
         // on first entry, char is the character before the integer
         if (next.trimStart().length === 0) {
             return;
@@ -1307,9 +1316,12 @@ class Parser {
             this.popConsumer();
             this.pushConsumer(this.consumePotentialLeadingSign);
         }
-        else if (next === 'n' || next === 'N') {
+        else if (isWordStartLetter(next)) {
             this.popConsumer();
             this.pushConsumer(this.consumeNamedNumberOrNull);
+        }
+        else {
+            throw new Error("This code is supposed to be unreachable");
         }
     }
     private consumeNamedNumberOrNull(char: string, next: string) {
@@ -1321,7 +1333,7 @@ class Parser {
             let numb;
             if (this.numberType === "i") {
                 if (tu !== "NULL") {
-                    // error
+                    this.errors.push({ code: XtnParseErrorCode.UnrecognizedToken, start: { line: this.lineNo, column: this.colNo + 1 - text.length, index: this.pos + 1 - text.length }, end: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, message: "An integer value in decimal or hexadecimal or null was expected" });
                 }
                 numb = new XtnIntegerImpl(null, text, true, undefined, {}, {});
             }
@@ -1345,11 +1357,20 @@ class Parser {
                         break;
                     default:
                         v = null;
-                        // error
+                        this.errors.push({ code: XtnParseErrorCode.UnrecognizedToken, start: { line: this.lineNo, column: this.colNo + 1 - text.length, index: this.pos + 1 - text.length }, end: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, message: `Unrecognized token '${text}'` });
                         break;
                 }
                 numb = new XtnRealNumberImpl(v, text, true, undefined, {}, {});
             }
+            this.completeValue(numb);
+        }
+    }
+    private errorWordStart = -1;
+    private consumeErrorWordInNumber(char: string, next: string) {
+        if (!isKeyLetter(next)) {
+            this.errors.push({ code: XtnParseErrorCode.UnrecognizedToken, start: { line: this.lineNo, column: this.colNo - (this.pos - this.errorWordStart), index: this.errorWordStart }, end: {line: this.lineNo, column: this.colNo + 1, index: this.pos + 1}, message: "Expected a decimal digit" });
+            const numb = new XtnIntegerImpl(null, this.document.substring(this.numberStartPos + 1, this.pos + 1).trimStart(), true, undefined, {}, {});
+            this.popConsumer();
             this.completeValue(numb);
         }
     }
@@ -1364,17 +1385,31 @@ class Parser {
             this.intValue = neg ? -1n : 1n;
             if (this.numberType === "i") {
                 if (!isAsciiNumber(next)) {
-                    // error
+                    if (isWordStartLetter(next)) {
+                        this.popConsumer();
+                        this.errorWordStart = this.pos + 1;
+                        this.pushConsumer(this.consumeErrorWordInNumber);
+                    }
+                    else {
+                        this.errors.push({ code: XtnParseErrorCode.UnrecognizedToken, start: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, end: undefined, message: "Expected a decimal digit" });
+                        const numb = new XtnIntegerImpl(null, this.document.substring(this.numberStartPos + 1, this.pos + 1).trimStart(), true, undefined, {}, {});
+                        this.popConsumer();
+                        this.completeValue(numb);
+                    }
                 }
             }
             else {
-                if ('nNiI'.indexOf(next) >= 0) {
+                if (isWordStartLetter(next)) {
                     this.popConsumer();
                     this.pushConsumer(this.consumeNamedNumberOrNull);
                     return;
                 }
                 if (!(next === '.' || isAsciiNumber(next))) {
-                    // error
+                    throw new Error("This code is supposed to be unreachable");
+                    this.errors.push({ code: XtnParseErrorCode.UnrecognizedToken, start: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, end: undefined, message: "Expected a decimal digit or decimal point" });
+                    const numb = new XtnIntegerImpl(null, this.document.substring(this.numberStartPos + 1, this.pos + 1).trimStart(), true, undefined, {}, {});
+                    this.popConsumer();
+                    this.completeValue(numb);
                 }
             }
         }
@@ -1394,7 +1429,10 @@ class Parser {
                 this.expStartPos = this.pos;
             }
             else if (!isAsciiNumber(next)) {
-                // error
+                this.errors.push({ code: XtnParseErrorCode.UnrecognizedToken, start: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, end: undefined, message: "Expected a decimal digit or 'e' or 'E' after a decimal point" });
+                const numb = new XtnRealNumberImpl(null, this.document.substring(this.numberStartPos + 1, this.pos + 1).trimStart(), this.numberType !== null, undefined, {}, {});
+                this.completeValue(numb);
+                return;
             }
             this.pushConsumer(this.consumeNumber);
             this.isLeadingZero = false;
@@ -1408,12 +1446,32 @@ class Parser {
             this.consumeNumber(char, next);
         }
     }
+    private hexErrorStart = -1;
+    private consumeHexError(char: string, next: string) {
+        if (isKeyLetter(next)) return;
+        this.popConsumer();
+        this.errors.push({ code: XtnParseErrorCode.UnrecognizedToken, start: { line: this.lineNo, column: this.colNo - (this.pos - this.hexErrorStart), index: this.hexErrorStart }, end: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, message: "Expected a sequence of hexadecimal digits 0-9 or a-f after 0x" });
+        const numb = new XtnIntegerImpl(null, this.document.substring(this.numberStartPos + 1, this.pos + 1).trimStart(), this.numberType !== null, undefined, {}, {});
+        this.completeValue(numb);
+        return;
+    }
     private consumeHexStart(char: string, next: string) {
         // on first entry, char is the x in 0x
         const h = hexDigit(next);
         if (h === null) {
-            // error
-            return;
+            if (isWordStartLetter(next)) {
+                this.popConsumer();
+                this.hexErrorStart = this.pos + 1;
+                this.pushConsumer(this.consumeHexError);
+                return;
+            }
+            else {
+                this.errors.push({ code: XtnParseErrorCode.UnrecognizedToken, start: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, end: undefined, message: "Expected a hexadecimal digit 0-9 or a-f after 0x" });
+                const numb = new XtnIntegerImpl(null, this.document.substring(this.numberStartPos + 1, this.pos + 1).trimStart(), this.numberType !== null, undefined, {}, {});
+                this.popConsumer();
+                this.completeValue(numb);
+                return;
+            }
         }
         this.popConsumer();
         if (next !== '0') {
@@ -1509,9 +1567,12 @@ class Parser {
             this.popConsumer();
             this.pushConsumer(this.consumePotentialLeadingSign);
         }
-        else if ('nNiI'.indexOf(next) >= 0) {
+        else if (isWordStartLetter(next)) {
             this.popConsumer();
             this.pushConsumer(this.consumeNamedNumberOrNull);
+        }
+        else {
+            throw new Error("This code is supposed to be unreachable.");
         }
     }
     private startImplicitNumber(char: string, next: string) {
@@ -1751,7 +1812,8 @@ type ParseResult = { succeeded: true; result: XtnObject; } | { succeeded: false;
 export function parseXtn(document: string): XtnObject{
     const pr = tryParseXtn(document);
     if (pr.succeeded) return pr.result;
-    throw new Error(pr.errors[0].message);
+    const err = pr.errors[0];
+    throw new Error(`Line: ${err.start.line}, Col: ${err.start.column}, ${err.message}`);
 }
 export function tryParseXtn(document: string): ParseResult {
     const p = new Parser(document);
