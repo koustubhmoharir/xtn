@@ -12,6 +12,9 @@ export enum XtnParseErrorCode {
     UnexpectedTextOnStartTripleQuotes = 9,
     BadIndentation = 10,
     MissingBooleanOrNull = 11,
+    UnmatchedClosingBracket = 12,
+    UnmatchedClosingBrace = 13,
+    MissingValue = 14,
 }
 
 export interface XtnCharPosition {
@@ -108,6 +111,7 @@ export interface XtnConstructor extends XtnElement {
 export interface XtnKeyValuePair {
     readonly type: "keyvaluepair";
     readonly key: XtnKey;
+    readonly posColon?: XtnCharPosition;
     readonly value: XtnValue;
 }
 
@@ -451,7 +455,8 @@ class XtnKeyValuePairImpl implements XtnKeyValuePair {
     value!: XtnValueImpl;
 
     constructor(
-        public readonly key: XtnKeyImpl
+        public readonly key: XtnKeyImpl,
+        public readonly posColon: XtnCharPosition
     ) { }
 }
 
@@ -690,7 +695,7 @@ function isKeyLetter(char: string) {
 
 class Parser {
     constructor(readonly document: string) {
-        this._scopeStates = [this._scopeState = { scope: this.rootObj, state: { childMarkerPosition: undefined } }];
+        this._scopeStates = [this._scopeState = { scope: this.rootObj, state: { childMarkerPosition: undefined, allowKeys: true } }];
         this._consumers.push(this.consumeObject);
         this._consumer = this.consumeObject;
     }
@@ -724,13 +729,14 @@ class Parser {
         scope: XtnArrayImpl | XtnValueOrPairListImpl | XtnKeyValuePairImpl | XtnConstructorImpl | XtnTagNameImpl | XtnTagNameSegmentImpl;
         state: {
             childMarkerPosition: XtnCharPosition | undefined;
+            allowKeys: boolean;
         }
     };
     private get currentScope() { return this._scopeState.scope; }
     private get currentScopeState() { return this._scopeState.state; }
     private _scopeStates: (Parser["_scopeState"])[];
-    private pushScope(scope: XtnArrayImpl | XtnValueOrPairListImpl | XtnKeyValuePairImpl | XtnConstructorImpl | XtnTagNameImpl | XtnTagNameSegmentImpl) {
-        this._scopeStates.push(this._scopeState = { scope, state: {childMarkerPosition: undefined} });
+    private pushScope(scope: XtnArrayImpl | XtnValueOrPairListImpl | XtnKeyValuePairImpl | XtnConstructorImpl | XtnTagNameImpl | XtnTagNameSegmentImpl, allowKeys: boolean) {
+        this._scopeStates.push(this._scopeState = { scope, state: { childMarkerPosition: undefined, allowKeys } });
     }
     private popScope() {
         const ss = this._scopeStates;
@@ -788,7 +794,8 @@ class Parser {
                 this.currentScopeState.childMarkerPosition = undefined;
             }
             else {
-                // error
+                // error: probably not reachable
+                throw new Error("Not implemented");
             }
         }
         else if ("items" in scope) {
@@ -796,7 +803,8 @@ class Parser {
             this.currentScopeState.childMarkerPosition = undefined;
         }
         else {
-            // error
+            // error: probably not reachable
+            throw new Error("Not implemented");
         }
     }
     private eof = false;
@@ -1155,25 +1163,25 @@ class Parser {
 
     private startObject() {
         this.pushConsumer(this.consumeObject);
-        this.pushScope(new XtnObjectImpl({}, {}));
+        this.pushScope(new XtnObjectImpl({}, {}), true);
     }
     private consumeObject(char: string, next: string) {
-        this.consumeInner(char, next, true, true);
+        this.consumeInner(char, next, true);
     }
     private consumePairValue(char: string, next: string) {
-        this.consumeInner(char, next, false, false);
+        this.consumeInner(char, next, false);
     }
-    private consumeInner(char: string, next: string, allowKeys: boolean, plusForChildren: boolean) {
+    private consumeInner(char: string, next: string, plusForChildren: boolean) {
         if (char.trimStart().length === 0) {
             return;
         }
-        if (allowKeys && char === ":") {
+        if (this.currentScopeState.allowKeys && char === ":") {
             if (!this.rawText) {
-                this.rawText = new XtnKeyImpl("", false, {line: this.lineNo, column: this.colNo, index: this.pos}, {line: this.lineNo, column: this.colNo, index: this.pos});
-                this.errors.push({code:XtnParseErrorCode.MissingKey, start: this.rawText.posStart!, end: undefined, message: "Missing key before colon"});
+                this.rawText = new XtnKeyImpl("", false, { line: this.lineNo, column: this.colNo, index: this.pos }, { line: this.lineNo, column: this.colNo, index: this.pos });
+                this.errors.push({ code: XtnParseErrorCode.MissingKey, start: this.rawText.posStart!, end: undefined, message: "Missing key before colon" });
             }
-            const keyValuePair = new XtnKeyValuePairImpl(this.rawText instanceof XtnQStringImpl ? new XtnKeyImpl(this.rawText.value, true, this.rawText.posStart, this.rawText.posEnd) : this.rawText);
-            this.pushScope(keyValuePair);
+            const keyValuePair = new XtnKeyValuePairImpl(this.rawText instanceof XtnQStringImpl ? new XtnKeyImpl(this.rawText.value, true, this.rawText.posStart, this.rawText.posEnd) : this.rawText, { line: this.lineNo, column: this.colNo, index: this.pos });
+            this.pushScope(keyValuePair, false);
             this.rawText = null;
             this.pushConsumer(this.consumePairValue);
             return;
@@ -1226,9 +1234,16 @@ class Parser {
             this.startExplicitBoolean(char, next);
         }
         else if (char === '}') {
-            this.popConsumer();
-            const obj = this.popScope();
-            if (obj instanceof XtnObjectImpl) {
+            let obj = this.currentScope;
+            if (obj instanceof XtnKeyValuePairImpl) {
+                this.completeValue(new XtnNullImpl("", {}, {}));
+                const pc = obj.posColon;
+                this.errors.push({ code: XtnParseErrorCode.MissingValue, start: { line: pc.line, column: pc.column! + 1, index: pc.index! + 1 }, end: undefined, message: "Expected a value" });
+            }
+            obj = this.currentScope;
+            if (obj instanceof XtnObjectImpl && obj !== this.rootObj) {
+                this.popConsumer();
+                this.popScope();
                 const parent = this.currentScope;
                 if (parent instanceof XtnConstructorImpl) {
                     this.popScope();
@@ -1237,12 +1252,19 @@ class Parser {
                 else
                     this.completeValue(obj);
             }
+            else {
+                this.errors.push({ code: XtnParseErrorCode.UnmatchedClosingBrace, start: { line: this.lineNo, column: this.colNo, index: this.pos }, end: undefined, message: "Unexpected closing brace" });
+            }
         }
         else if (char === ']') {
-            this.popConsumer();
-            const arr = this.popScope();
+            const arr = this.currentScope;
             if (arr instanceof XtnArrayImpl) {
+                this.popConsumer();
+                this.popScope();
                 this.completeValue(arr);
+            }
+            else {
+                this.errors.push({ code: XtnParseErrorCode.UnmatchedClosingBracket, start: { line: this.lineNo, column: this.colNo, index: this.pos }, end: undefined, message: "Unexpected closing bracket" });
             }
         }
         else if (char === ')') {
@@ -1268,8 +1290,11 @@ class Parser {
         else if (!plusForChildren && char === '+') {
             this.currentScopeState.childMarkerPosition = { line: this.lineNo, column: this.colNo, index: this.pos };
         }
-        else {
-            // error
+        else if (char !== ',' && char !== '\0') {
+            const ps = { line: this.lineNo, column: this.colNo, index: this.pos };
+            const pe = { line: this.lineNo, column: this.colNo + char.length, index: this.pos + char.length };
+            this.completeValue(new XtnErrorTokenImpl(char, ps, pe));
+            this.errors.push({ code: XtnParseErrorCode.UnrecognizedToken, start: ps, end: undefined, message: `Unexpected token '${char}'` });
         }
     }
 
@@ -1290,10 +1315,10 @@ class Parser {
 
     private startArray() {
         this.pushConsumer(this.consumeArray);
-        this.pushScope(new XtnArrayImpl({}, {}));
+        this.pushScope(new XtnArrayImpl({}, {}), false);
     }
     private consumeArray(char: string, next: string) {
-        this.consumeInner(char, next, false, false);
+        this.consumeInner(char, next, false);
     }
 
     private numberStartPos = -1;
@@ -1659,15 +1684,13 @@ class Parser {
         // on first entry, char is the first character of the unquoted text
         if (isKeyLetter(next))
             return;
-        const scope = this.currentScope;
-        const isValue = scope instanceof XtnKeyValuePairImpl;
-        if (!isValue && next !== '\n' && next.trimStart().length === 0) {
+        if (this.currentScopeState.allowKeys && next !== '\n' && next.trimStart().length === 0) {
             return;
         }
         this.popConsumer();
         const str = this.document.substring(this.unquotedTextStartPos, this.pos + 1).trimEnd().replace(/\s/g, ' ');
         const k = new XtnKeyImpl(str, false, {line: this.lineNo, column: this.colNo - (this.pos - this.unquotedTextStartPos), index: this.unquotedTextStartPos}, {line: this.lineNo, column: this.colNo + 1, index: this.pos + 1});
-        if (isValue || this.eof) {
+        if (this.currentScope instanceof XtnKeyValuePairImpl || this.eof) {
             this.interpretAndCompleteValue(k);
         }
         else {
@@ -1681,8 +1704,8 @@ class Parser {
         this.constructorStartPos = this.pos;
         this.openAngles = 0;
         const tagName = new XtnTagNameImpl({}, {});
-        this.pushScope(new XtnConstructorImpl(tagName))
-        this.pushScope(tagName);
+        this.pushScope(new XtnConstructorImpl(tagName), false)
+        this.pushScope(tagName, false);
         this.pushConsumer(this.consumeLeadingSegmentSpace);
         this.consumeLeadingSegmentSpace(char, next);
     }
@@ -1705,7 +1728,7 @@ class Parser {
         if (isKeyLetter(next))
             return;
         const name = this.document.substring(this.segStartPos, this.pos + 1);
-        this.pushScope(new XtnTagNameSegmentImpl(name, {}, {}));
+        this.pushScope(new XtnTagNameSegmentImpl(name, {}, {}), false);
         this.popConsumer();
         this.pushConsumer(this.consumeTrailingSegNameSpace);
         this.consumeTrailingSegNameSpace(char, next);
@@ -1774,7 +1797,7 @@ class Parser {
     }
     private consumeSegArgs(char: string, next: string) {
         const tagName = new XtnTagNameImpl({}, {});
-        this.pushScope(tagName);
+        this.pushScope(tagName, false);
         this.pushConsumer(this.consumeLeadingSegmentSpace);
         this.consumeLeadingSegmentSpace(char, next);
     }
@@ -1789,18 +1812,18 @@ class Parser {
         const constr = this.currentScope as XtnConstructorImpl;
         const constrArgs = new XtnArgsImpl({}, {});
         constr.args = constrArgs;
-        this.pushScope(constrArgs);
+        this.pushScope(constrArgs, true);
         this.popConsumer();
         this.pushConsumer(this.consumeConstrArgs);
     }
     private consumeConstrArgs(char: string, next: string) {
-        this.consumeInner(char, next, true, false);
+        this.consumeInner(char, next, false);
     }
     private consumeInitializer(char: string, next: string) {
         const constr = this.currentScope as XtnConstructorImpl;
         const init = new XtnObjectImpl({}, {});
         constr.initializer = init;
-        this.pushScope(init);
+        this.pushScope(init, true);
         this.popConsumer();
         this.pushConsumer(this.consumeObject);
     }

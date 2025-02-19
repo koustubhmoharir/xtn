@@ -229,6 +229,9 @@ test('error_unexpected_slash', () => {
         code: XtnParseErrorCode.UnexpectedSlash,
         start: { line: 2, column: 2 }
     }, {
+        code: XtnParseErrorCode.MissingValue,
+        start: { line: 1, column: 6 }
+    }, {
         code: XtnParseErrorCode.UnexpectedSlash,
         start: { line: 3, column: 1 }
     }]);
@@ -535,6 +538,76 @@ test('errors_bool', () => {
             code: XtnParseErrorCode.UnrecognizedToken,
             start: { line: 8, column: 4 },
             end: { line: 8, column: 9 }
+        }
+    ]);
+});
+
+test('error_extra_close_bracket', () => {
+    const { errors, partial } = loadXtnWithErrors('extra_close_bracket');
+    const json = loadJson('extra_close_bracket');
+    convert_children(json);
+    const xtn = partial.data();
+    expect(xtn).toEqual(json);
+    expect(errors).toMatchObject([
+        {
+            code: XtnParseErrorCode.UnmatchedClosingBracket,
+            start: { line: 8, column: 0 }
+        }
+    ]);
+});
+
+test('error_extra_close_brace', () => {
+    const { errors, partial } = loadXtnWithErrors('extra_close_brace');
+    const json = loadJson('extra_close_brace');
+    convert_children(json);
+    const xtn = partial.data();
+    expect(xtn).toEqual(json);
+    expect(errors).toMatchObject([
+        {
+            code: XtnParseErrorCode.UnmatchedClosingBrace,
+            start: { line: 7, column: 4 }
+        },
+        {
+            code: XtnParseErrorCode.UnmatchedClosingBrace,
+            start: { line: 9, column: 0 }
+        }
+    ]);
+});
+
+
+test('error_bad_key_in_arr1', () => {
+    const { errors, partial } = loadXtnWithErrors('bad_key_in_arr1');
+    const json = loadJson('bad_key_in_arr1');
+    convert_children(json);
+    const xtn = partial.data();
+    expect(xtn).toEqual(json);
+    expect(errors).toMatchObject([
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 4, column: 4 }
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 4, column: 6 }
+        },
+        {
+            code: XtnParseErrorCode.UnrecognizedToken,
+            start: { line: 4, column: 7 }
+        }
+    ]);
+});
+
+
+test('error_missing_value', () => {
+    const { errors, partial } = loadXtnWithErrors('missing_value');
+    const json = loadJson('missing_value');
+    convert_children(json);
+    const xtn = partial.data();
+    expect(xtn).toEqual(json);
+    expect(errors).toMatchObject([
+        {
+            code: XtnParseErrorCode.MissingValue,
+            start: { line: 1, column: 6 }
         }
     ]);
 });
