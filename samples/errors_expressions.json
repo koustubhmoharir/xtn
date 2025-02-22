@@ -1,0 +1,71 @@
+{
+    "a": {
+        "$id": {
+            "name": ".a",
+            "segments": ["", "a"]
+        }
+    },
+    "b": {
+        "$id": {
+            "name": "a..a",
+            "segments": ["a", "", "a"]
+        }
+    },
+    "c": {
+        "$id": "",
+        "$args": []
+    },
+    "d": {
+        "$id": {
+            "name": "Point<int>",
+            "segments": [{
+                    "name": "Point",
+                    "args": ["int"]
+                }
+            ]
+        },
+        "$args": []
+    },
+    "e": {
+        "$id": {
+            "name": "Point<int<X,Y>>",
+            "segments": [{
+                    "name": "Point",
+                    "args": [{
+                            "name": "int<X,Y>",
+                            "segments": [{
+                                    "name": "int",
+                                    "args": ["X", "Y"]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        "$args": []
+    },
+    "f": {
+        "$id": {
+            "name": "Point<int<X,Y.>>",
+            "segments": [{
+                    "name": "Point",
+                    "args": [{
+                            "name": "int<X,Y.>",
+                            "segments": [{
+                                    "name": "int",
+                                    "args": ["X", {
+                                            "name": "Y.",
+                                            "segments": ["Y", ""]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        "$args": []
+    }
+}

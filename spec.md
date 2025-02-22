@@ -5,6 +5,10 @@ Newlines are significant. Other whitespace is insignificant in most (but not all
 
 Casing is significant, but applications that consume this format may ignore it.
 
+## Compatibility with JSON and JSON5
+
+Valid JSON and JSON5 is valid XTN. XTN adds ways to write strings without any escaping, distinguishes between integers and floating point numbers, allows enabling or disabling an entire nested value easily, adds support for referencing functions / variables from the parser's runtime environment.
+
 ## Comments
 Comments start with a #. Whitespace before the # is allowed. An entire line is either a comment or not a comment. A space after the # is recommended for readability. Trailing whitespace on a comment line is not considered significant.
 ```

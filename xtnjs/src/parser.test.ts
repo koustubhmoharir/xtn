@@ -1,6 +1,6 @@
 import { test, expect } from "vitest";
 import { loadJson, loadXtn, loadXtnWithErrors } from "./testutils";
-import { XtnParseErrorCode, children, type XtnEnvironment, type XtnTagName, type XtnTagNameSegment } from "./parser";
+import { XtnParseErrorCode, children, type XtnEnvironment, type XtnIdentifier, type XtnIdentifierSegment } from "./parser";
 
 test('match_sample1', () => {
     const xtn = loadXtn('sample1').data();
@@ -162,30 +162,30 @@ test('match_strings_ml', () => {
     expect(xtn).toEqual(json);
 });
 
-function segToJSON(seg: XtnTagNameSegment) {
+function segToJSON(seg: XtnIdentifierSegment) {
     if (seg.args?.length) {
         return {
             name: seg.name,
-            args: seg.args.map(a => tagToJSON(a))
+            args: seg.args.map(a => identifierToJSON(a))
         };
     }
     else {
         return seg.name;
     }
 }
-function tagToJSON(tag: XtnTagName): any {
-    if (tag.segments.length > 1 || tag.segments[0].args?.length) {
+function identifierToJSON(id: XtnIdentifier): any {
+    if (id.segments.length > 1 || id.segments[0].args?.length) {
         return ({
-            name: tag.name,
-            segments: tag.segments.map(s => segToJSON(s))
+            name: id.name,
+            segments: id.segments.map(s => segToJSON(s))
         });
     }
-    return tag.name;
+    return id.name;
 }
 
 const env: XtnEnvironment = {
-    construct(tag, args, opts) {
-        const obj = { $tag: tagToJSON(tag) } as any;
+    construct(id, args, opts) {
+        const obj = { $id: identifierToJSON(id) } as any;
         if (args && opts) {
             obj.$args = args;
             if (Object.keys(opts).length > 0)
@@ -195,16 +195,16 @@ const env: XtnEnvironment = {
     },
 };
 
-test('match_constructors', () => {
-    const xtn = loadXtn('constructors').data(env);
-    const json = loadJson('constructors');
+test('match_expressions', () => {
+    const xtn = loadXtn('expressions').data(env);
+    const json = loadJson('expressions');
 
     expect(xtn[children]).toEqual(json);
 });
 
-test('match_constructors_type_args', () => {
-    const xtn = loadXtn('constructors_type_args').data(env);
-    const json = loadJson('constructors_type_args');
+test('match_expressions_type_args', () => {
+    const xtn = loadXtn('expressions_type_args').data(env);
+    const json = loadJson('expressions_type_args');
 
     expect(xtn[children]).toEqual(json);
 });
@@ -288,7 +288,7 @@ function convert_children(json: any) {
 }
 
 test('match_space_sep1', () => {
-    const xtn = loadXtn('space_sep1').data(env);
+    const xtn = loadXtn('space_sep1').data();
     const json = loadJson('space_sep1');
     convert_children(json);
     expect(xtn).toEqual(json);
@@ -608,6 +608,63 @@ test('error_missing_value', () => {
         {
             code: XtnParseErrorCode.MissingValue,
             start: { line: 1, column: 6 }
+        }
+    ]);
+});
+
+test('error_extra_close_paren', () => {
+    const { errors, partial } = loadXtnWithErrors('extra_close_paren');
+    const json = loadJson('extra_close_paren');
+    convert_children(json);
+    const xtn = partial.data();
+    expect(xtn).toEqual(json);
+    expect(errors).toMatchObject([
+        {
+            code: XtnParseErrorCode.UnmatchedClosingParenthesis,
+            start: { line: 7, column: 4 }
+        },
+        {
+            code: XtnParseErrorCode.UnmatchedClosingParenthesis,
+            start: { line: 9, column: 0 }
+        }
+    ]);
+});
+
+test('error_expressions', () => {
+    const { errors, partial } = loadXtnWithErrors('errors_expressions');
+    const json = loadJson('errors_expressions');
+    convert_children(json);
+    const xtn = partial.data(env);
+
+    expect(xtn).toEqual(json);
+    expect(errors).toMatchObject([
+        {
+            code: XtnParseErrorCode.MissingIdentifierName,
+            start: { line: 0, column: 4 }
+        },
+        {
+            code: XtnParseErrorCode.MissingIdentifierName,
+            start: { line: 1, column: 7 }
+        },
+        {
+            code: XtnParseErrorCode.MissingIdentifierName,
+            start: { line: 2, column: 4 }
+        },
+        {
+            code: XtnParseErrorCode.MissingClosingAngledBracket,
+            start: { line: 3, column: 14 }
+        },
+        {
+            code: XtnParseErrorCode.MissingClosingAngledBracket,
+            start: { line: 4, column: 18 }
+        },
+        {
+            code: XtnParseErrorCode.MissingIdentifierName,
+            start: { line: 5, column: 19 }
+        },
+        {
+            code: XtnParseErrorCode.MissingClosingAngledBracket,
+            start: { line: 5, column: 19 }
         }
     ]);
 });

@@ -1,5 +1,5 @@
 [{
-    "$tag": {
+    "$id": {
         "name": "Geometry.Point<int<A,Geometry.B<C>>>",
         "segments": [
             "Geometry",
@@ -27,7 +27,7 @@
         ]
     }
 },{
-    "$tag": {
+    "$id": {
         "name": "Geometry.Point<int>",
         "segments": [
             "Geometry",
@@ -38,7 +38,7 @@
         ]
     }
 },{
-    "$tag": {
+    "$id": {
         "name": "Point<int<A,B<C>>>",
         "segments": [{
             "name": "Point",
@@ -59,7 +59,7 @@
         }]
     }
 },{
-    "$tag": {
+    "$id": {
         "name": "Point<int<A>>",
         "segments": [{
             "name": "Point",
@@ -73,7 +73,7 @@
         }]
     }
 },{
-    "$tag": {
+    "$id": {
         "name": "Point<int<A>>",
         "segments": [{
             "name": "Point",
@@ -87,7 +87,7 @@
         }]
     }
 },{
-    "$tag": {
+    "$id": {
         "name": "Point<int>",
         "segments": [{
             "name": "Point",
@@ -95,7 +95,7 @@
         }]
     }
 },{
-    "$tag": {
+    "$id": {
         "name": "Point<int,double>",
         "segments": [{
             "name": "Point",
@@ -104,7 +104,7 @@
     },
     "$args": []
 },{
-    "$tag": {
+    "$id": {
         "name": "Point<int,double>",
         "segments": [{
             "name": "Point",
@@ -112,11 +112,24 @@
         }]
     }
 },{
-    "$tag": {
+    "$id": {
         "name": "Point<int,double>",
         "segments": [{
             "name": "Point",
             "args": ["int", "double"]
         }]
+    }
+},{
+    "$id": "Point"
+},{
+    "$id": {
+        "name": "Geometry<int>.Point",
+        "segments": [
+            {
+                "name": "Geometry",
+                "args": ["int"]
+            },
+            "Point"
+        ]
     }
 }]

@@ -1,61 +1,61 @@
 [{
-    "$tag": "Point",
+    "$id": "Point",
     "$args": [1.0, 2.0]
 },{
-    "$tag": "Point",
+    "$id": "Point",
     "$args": [1.0],
     "y": 2.0
 },{
-    "$tag": "Point",
+    "$id": "Point",
     "$args": [],
     "$opts": {
         "x": 1.0
     },
     "y": 2.0
 },{
-    "$tag": "Point",
+    "$id": "Point",
     "$args": [],
     "$opts": {
         "x": 1.0
     },
     "y": 2.0
 },{
-    "$tag": "Point",
+    "$id": "Point",
     "$args": [],
     "$opts": {
         "x": 1.0,
         "y": 2.0
     }
 },{
-    "$tag": "Point",
+    "$id": "Point",
     "$args": [],
     "$opts": {
         "x": 1.0,
         "y": 2.0
     }
 },{
-    "$tag": {
+    "$id": {
         "name": "Geometry.Point",
         "segments": ["Geometry", "Point"]
     }
 },{
-    "$tag": {
+    "$id": {
         "name": "Geometry.Point",
         "segments": ["Geometry", "Point"]
     }
 },{
-    "$tag": {
+    "$id": {
         "name": "Geometry.Point",
         "segments": ["Geometry", "Point"]
     }
 },{
-    "$tag": "Point"
+    "$id": "Point"
 },{
-    "$tag": "Point",
+    "$id": "Point",
     "x": 1.0,
     "y": 2.0
 },{
-    "$tag": "Point",
+    "$id": "Point",
     "x": 1.0,
     "y": 2.0
 }]

@@ -7,3 +7,5 @@
 += Point < int , double >()
 += Point < int , double > 
 += Point<int,double>
++= Point
++= Geometry<int>.Point 

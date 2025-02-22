@@ -1,0 +1,6 @@
+a: = .a
+b: = a..a
+c: = ()
+d: = Point<int()
+e: = Point<int<X,Y()
+f: = Point<int<X,Y.()
