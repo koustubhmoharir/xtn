@@ -23,6 +23,7 @@ export enum XtnParseErrorCode {
     MissingParenthesis = 20,
     MissingRealNumberOrNull = 21,
     MissingIntegerOrNull = 22,
+    MissingQuote = 23,
 }
 
 export interface XtnCharPosition {
@@ -523,7 +524,7 @@ class XtnObjectImpl extends XtnValueOrPairListImpl implements XtnObject {
     }
 }
 
-function parseJson5String(str: string, start: XtnCharPosition, errors: XtnParseError[]) {
+function parseJson5String(str: string, start: XtnCharPosition, hasEndQuote: boolean, errors: XtnParseError[]) {
     const cps = [];
     let escape = 0;
     let escdCR = false;
@@ -533,7 +534,7 @@ function parseJson5String(str: string, start: XtnCharPosition, errors: XtnParseE
     let curLineNo = start.line!;
     let curColNo = start.column! + 1;
     let curIndex = start.index! + 1;
-    for (const c of str.substring(1, str.length - 1)) {
+    for (const c of str.substring(1, str.length - (hasEndQuote ? 1 : 0))) {
         if (escape !== 0) {
             if (escape === 1) {
                 escdCR = false;
@@ -728,6 +729,9 @@ class Parser {
     lineStartPos = 0;
     colNo = -1;
     pos = -1;
+    lineNoNext = 0;
+    colNoNext = -1;
+    posNext = -1;
     private logFragmentExcl(header: string, startPos: number) {
         //console.log(`Read ${header} ${this.lineNo}, ${startPos - this.lineStartPos}:${this.pos - this.lineStartPos} :${this.document.substring(startPos, this.pos)}`);
     }
@@ -819,55 +823,48 @@ class Parser {
     parse() {
         let char = '\0';
         for (let next of this.document) {
-            if (this.processChar(char, next)) {
-                const len = char.length;
-                this.colNo += len;
-                this.pos += len;
-            }
+            this.processChar(char, next);
             char = next;
         }
-        const lastLineNo = this.lineNo;
-        const lastColNo = this.colNo + char.length;
-        const lastPos = this.pos + char.length;
         this.eof = true;
         this.processChar(char, '\n');
         if (this._consumers.length > 1) {
             if (this.consumer === this.consumeBlockComment) {
-                this.errors.push({ code: XtnParseErrorCode.UnexpectedEndOfFile, start: { line: lastLineNo, column: lastColNo, index: lastPos }, end: undefined, message: "Unexpected end of file. Comment has not been closed with '*/'" });
+                this.errors.push({ code: XtnParseErrorCode.UnexpectedEndOfFile, start: { line: this.lineNo, column: this.colNo, index: this.pos }, end: undefined, message: "Unexpected end of file. Comment has not been closed with '*/'" });
                 this.popConsumer();
             }
         }
         this.handleIncompleteScopes();
         return this.rootObj;
     }
-    private crlf = false;
     private processChar(char: string, next: string) {
+        const len = char.length;
+        this.colNoNext = this.colNoNext + len;
+        this.posNext = this.posNext + len;
         if (char === '\r') {
             if (next === '\n') {
-                this.crlf = true;
-                return false;
+                return;
             }
             else {
+                this.lineNoNext = this.lineNo + 1;
+                this.colNoNext = 0;
                 this.consumer('\n', next === '\r' ? '\n' : next);
-                this.lineNo++;
-                this.colNo = -1;
-                this.lineStartPos = this.pos + 1;
-                return true;
+                this.lineNo = this.lineNoNext;
+                this.lineStartPos = this.posNext;
             }
         }
-        if (char === '\n') {
+        else if (char === '\n') {
+            this.lineNoNext = this.lineNo + 1;
+            this.colNoNext = 0;
             this.consumer(char, next === '\r' ? '\n' : next);
-            if (this.crlf) {
-                this.pos++;
-                this.crlf = false;
-            }
-            this.lineNo++;
-            this.colNo = -1;
-            this.lineStartPos = this.pos + 1;
-            return true;
+            this.lineNo = this.lineNoNext;
+            this.lineStartPos = this.posNext;
         }
-        this.consumer(char, next === '\r' ? '\n' : next);
-        return true;
+        else {
+            this.consumer(char, next === '\r' ? '\n' : next);
+        }
+        this.colNo = this.colNoNext;
+        this.pos = this.posNext;
     }
 
     private ignoreCount = 0;
@@ -926,7 +923,13 @@ class Parser {
             this.jsonStrStartPos = this.pos;
             this.jsonStrStartLine = this.lineNo;
             this.jsonStrStartCol = this.colNo;
-            this.pushConsumer(this.consumeJsonString);
+            if (this.eof) {
+                this.errors.push({ code: XtnParseErrorCode.MissingQuote, start: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, end: undefined, message: `Missing ${this.quoteChar === "'" ? "single" : "double"} quote` });
+                this.completeJsonString(new XtnQStringImpl("", {}, {}));
+            }
+            else {
+                this.pushConsumer(this.consumeJsonString);
+            }
         }
     }
     private cqCount = 0;
@@ -948,7 +951,10 @@ class Parser {
             this.mlStringLines.length = 0;
             this.cqCount = 2;
             this.mlSep = null;
-            if (next === '\\' || next.trimStart().length === 0) {
+            if (this.eof) {
+                this.completeUnclosedMultilineString();
+            }
+            else if (next === '\\' || next.trimStart().length === 0) {
                 this.popConsumer();
                 this.unexpTextOnTripleQuotesLineStart = -1;
                 this.pushConsumer(this.consumeStartTripleQuote);
@@ -994,15 +1000,17 @@ class Parser {
                 this.mlSep = '\n';
                 this.cqCount = 3;
             }
-            else if (next === '\\' || next.trimStart().length === 0) {
-                return;
-            }
             else {
-                // will report error at end of line
-                this.unexpTextOnTripleQuotesLineStart = this.quoteStartPos + 3;
-                this.popConsumer();
-                this.pushConsumer(this.consumeRestOfLineAfterStartTripleQuotes);
-                this.consumeRestOfLineAfterStartTripleQuotes(char, next);
+                if (this.eof) {
+                    this.completeUnclosedMultilineString();
+                }
+                else if (next !== '\\' && next.trimStart().length !== 0) {
+                    // will report error at end of line
+                    this.unexpTextOnTripleQuotesLineStart = this.quoteStartPos + 3;
+                    this.popConsumer();
+                    this.pushConsumer(this.consumeRestOfLineAfterStartTripleQuotes);
+                    this.consumeRestOfLineAfterStartTripleQuotes(char, next);
+                }
                 return;
             }
         }
@@ -1010,19 +1018,18 @@ class Parser {
             // on first entry, char is r in the \r on the line containing opening """
             if (next === '\n') {
                 this.cqCount = 3;
-                return;
+                if (this.eof) {
+                    this.completeUnclosedMultilineString();
+                }
             }
-            else if (next.trimStart().length === 0) {
-                return;
-            }
-            else {
+            else if (next.trimStart().length !== 0) {
                 // will report error at end of line
                 if (this.unexpTextOnTripleQuotesLineStart < 0)
                     this.unexpTextOnTripleQuotesLineStart = this.quoteStartPos + 3;
                 this.popConsumer();
                 this.pushConsumer(this.consumeRestOfLineAfterStartTripleQuotes);
-                return;
             }
+            return;
         }
         if (this.cqCount === 3) {
             this.curIndentWidth = 0;
@@ -1031,12 +1038,24 @@ class Parser {
             this.popConsumer();
             this.pushConsumer(this.consumeStartingIndentMLString);
         }
+        if (this.eof) {
+            this.completeUnclosedMultilineString();
+        }
+    }
+    private completeUnclosedMultilineString() {
+        this.errors.push({ code: XtnParseErrorCode.MissingQuote, start: { line: this.lineNoNext, column: this.colNoNext, index: this.posNext }, end: undefined, message: "Missing closing quotes of triple quoted string" });
+        this.popConsumer();
+        this.completeMultilineString();
     }
     allowLeadingEscapeML = false;
     private consumeStartingIndentMLString(char: string, next: string) {
         // on first entry, char is the first character of the line after the line containing the starting """
-        if (char.trimStart().length === 0)
+        if (char.trimStart().length === 0) {
+            if (this.eof) {
+                this.completeUnclosedMultilineString();
+            }
             return;
+        }
         this.mlIndent = this.document.substring(this.lineStartPos, this.pos);
         this.mlIndentWidth = 0;
         this.curIndentCount = 0;
@@ -1081,21 +1100,27 @@ class Parser {
     private mlStringLines: string[] = [];
     private consumeMultilineString(char: string, next: string) {
         // on first entry, the first non-blank line after the opening """ has already started but not yet ended
-        if (char === '\n') {
+        if (char === '\n' || this.eof) {
             let line = "";
             if (this.curIndentWidth >= this.mlIndentWidth) {
-                line = this.document.substring(this.lineStartPos + this.curIndentCount, this.pos);
+                line = this.document.substring(this.lineStartPos + this.curIndentCount, this.pos + (this.eof ? 1 : 0));
             }
             this.curIndentWidth = 0;
             this.curIndentCount = 0;
             this.prevIndentError = null;
+            let escape = false;
             if (this.allowLeadingEscapeML) {
                 this.allowLeadingEscapeML = false;
                 if (line.trim() === '\\') {
-                    return;
+                    escape = true;
                 }
             }
-            this.mlStringLines.push(line);
+            if (!escape) {
+                this.mlStringLines.push(line);
+            }
+            if (this.eof) {
+                this.completeUnclosedMultilineString();
+            }
             return;
         }
         
@@ -1132,7 +1157,10 @@ class Parser {
     private consumeMultilineEndQuotes(char: string, next: string) {
         // on first entry, char is the third character in the closing """
         this.popConsumer();
-        let indent = this.mlIndent;
+        this.completeMultilineString();
+    }
+    private completeMultilineString() {
+        let indent = this.mlIndent ?? "";
         if (this.allowLeadingEscapeML) {
             if (indent.length > 0) {
                 const c = indent[indent.length - 1];
@@ -1144,7 +1172,7 @@ class Parser {
             else
                 indent += '    ';
         }
-        this.completeValue(new XtnMStringImpl(this.mlStringLines.join(this.mlSep!), indent, {}, {}));
+        this.completeValue(new XtnMStringImpl(this.mlStringLines.join(this.mlSep ?? '\n'), indent, {}, {}));
         this.mlStringLines.length = 0;
     }
     private escape = false;
@@ -1156,20 +1184,29 @@ class Parser {
         else if (char === '\\') {
             this.escape = true;
         }
-        else if (char === this.quoteChar) {
-            const jStr = this.document.substring(this.jsonStrStartPos, this.pos + 1);
-            const qStrStart: XtnCharPosition = { line: this.jsonStrStartLine, column: this.jsonStrStartCol, index: this.jsonStrStartPos };
-            const qStr = new XtnQStringImpl(parseJson5String(jStr, qStrStart, this.errors), qStrStart, { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 });
-            this.popConsumer();
-            const scope = this.currentScope;
-            if (scope instanceof XtnKeyValuePairImpl) {
-                this.completeValue(qStr);
+        else {
+            const hasEndQuote = char === this.quoteChar;
+            if (hasEndQuote || this.eof) {
+                const jStr = this.document.substring(this.jsonStrStartPos, this.pos + 1);
+                const qStrStart: XtnCharPosition = { line: this.jsonStrStartLine, column: this.jsonStrStartCol, index: this.jsonStrStartPos };
+                const qStr = new XtnQStringImpl(parseJson5String(jStr, qStrStart, hasEndQuote, this.errors), qStrStart, { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 });
+                if (!hasEndQuote) {
+                    this.errors.push({ code: XtnParseErrorCode.MissingQuote, start: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, end: undefined, message: `Missing ${this.quoteChar === "'" ? "single" : "double"} quote` })
+                }
+                this.popConsumer();
+                this.completeJsonString(qStr);
             }
-            else {
-                this.rawText = qStr;
-                if (this.eof)
-                    this.completeRawText();
-            }
+        }
+    }
+    private completeJsonString(qStr: XtnQStringImpl) {
+        const scope = this.currentScope;
+        if (scope instanceof XtnKeyValuePairImpl) {
+            this.completeValue(qStr);
+        }
+        else {
+            this.rawText = qStr;
+            if (this.eof)
+                this.completeRawText();
         }
     }
 
@@ -1185,9 +1222,6 @@ class Parser {
     }
     private consumeInner(char: string, next: string, plusForChildren: boolean) {
         if (char.trimStart().length === 0) {
-            if (this.eof) {
-                this.handleIncompleteScopes();
-            }
             return;
         }
         if (this.currentScopeState.allowKeys && char === ":") {
@@ -1342,15 +1376,15 @@ class Parser {
                 this.completeValue(new XtnNullImpl("", {}, {}));
             }
             else if (scope instanceof XtnObjectImpl) {
-                this.errors.push({ code: XtnParseErrorCode.MissingBrace, start: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, end: undefined, message: "Expected a closing brace" });
+                this.errors.push({ code: XtnParseErrorCode.MissingBrace, start: { line: this.lineNo, column: this.colNo, index: this.pos }, end: undefined, message: "Expected a closing brace" });
                 this.completeObject(scope);
             }
             else if (scope instanceof XtnArrayImpl) {
-                this.errors.push({ code: XtnParseErrorCode.MissingBracket, start: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, end: undefined, message: "Expected a closing square bracket" });
+                this.errors.push({ code: XtnParseErrorCode.MissingBracket, start: { line: this.lineNo, column: this.colNo, index: this.pos }, end: undefined, message: "Expected a closing square bracket" });
                 this.completeArray(scope);
             }
             else if (scope instanceof XtnArgsImpl) {
-                this.errors.push({ code: XtnParseErrorCode.MissingParenthesis, start: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, end: undefined, message: "Expected a closing parenthesis" });
+                this.errors.push({ code: XtnParseErrorCode.MissingParenthesis, start: { line: this.lineNo, column: this.colNo, index: this.pos }, end: undefined, message: "Expected a closing parenthesis" });
                 this.popConsumer();
                 this.popScope();
                 const expr = this.popScope();

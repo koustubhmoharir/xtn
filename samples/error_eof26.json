@@ -1,0 +1,35 @@
+{
+    "a": {
+        "b": ["\""]
+    },
+    "$errors": [
+        {
+            "code": "BadIndentation",
+            "start": {
+                "line": 2,
+                "column": 0
+            }
+        },
+        {
+            "code": "MissingQuote",
+            "start": {
+                "line": 2,
+                "column": 1
+            }
+        },
+        {
+            "code": "MissingBracket",
+            "start": {
+                "line": 2,
+                "column": 1
+            }
+        },
+        {
+            "code": "MissingBrace",
+            "start": {
+                "line": 2,
+                "column": 1
+            }
+        }
+    ]
+}

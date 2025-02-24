@@ -1,0 +1,21 @@
+{
+    "a": {
+        "b": ["a"]
+    },
+    "$errors": [
+        {
+            "code": "MissingBracket",
+            "start": {
+                "line": 1,
+                "column": 11
+            }
+        },
+        {
+            "code": "MissingBrace",
+            "start": {
+                "line": 1,
+                "column": 11
+            }
+        }
+    ]
+}

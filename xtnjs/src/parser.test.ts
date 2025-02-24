@@ -350,3 +350,83 @@ test('error_eof6', () => {
 test('error_eof7', () => {
     matchWithErrors("error_eof7");
 });
+
+test('error_eof8', () => {
+    matchWithErrors("error_eof8");
+});
+
+test('error_eof9', () => {
+    matchWithErrors("error_eof9");
+});
+
+test('error_eof10', () => {
+    matchWithErrors("error_eof10");
+});
+
+test('error_eof11', () => {
+    matchWithErrors("error_eof11");
+});
+
+test('error_eof12', () => {
+    matchWithErrors("error_eof12");
+});
+
+test('error_eof13', () => {
+    matchWithErrors("error_eof13");
+});
+
+test('error_eof14', () => {
+    matchWithErrors("error_eof14");
+});
+
+test('error_eof15', () => {
+    matchWithErrors("error_eof15");
+});
+
+test('error_eof16', () => {
+    matchWithErrors("error_eof16");
+});
+
+test('error_eof17', () => {
+    matchWithErrors("error_eof17");
+});
+
+test('error_eof18', () => {
+    matchWithErrors("error_eof18");
+});
+
+test('error_eof19', () => {
+    matchWithErrors("error_eof19");
+});
+
+test('error_eof20', () => {
+    matchWithErrors("error_eof20");
+});
+
+test('error_eof21', () => {
+    matchWithErrors("error_eof21");
+});
+
+test('error_eof22', () => {
+    matchWithErrors("error_eof22");
+});
+
+test('error_eof23', () => {
+    matchWithErrors("error_eof23");
+});
+
+test('error_eof24', () => {
+    matchWithErrors("error_eof24");
+});
+
+test('error_eof25', () => {
+    matchWithErrors("error_eof25");
+});
+
+test('error_eof26', () => {
+    matchWithErrors("error_eof26");
+});
+
+test('error_eof27', () => {
+    matchWithErrors("error_eof27");
+});
