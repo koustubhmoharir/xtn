@@ -18,6 +18,11 @@ export enum XtnParseErrorCode {
     UnmatchedClosingParenthesis = 15,
     MissingIdentifierName = 16,
     MissingClosingAngledBracket = 17,
+    MissingBrace = 18,
+    MissingBracket = 19,
+    MissingParenthesis = 20,
+    MissingRealNumberOrNull = 21,
+    MissingIntegerOrNull = 22,
 }
 
 export interface XtnCharPosition {
@@ -829,8 +834,10 @@ class Parser {
         if (this._consumers.length > 1) {
             if (this.consumer === this.consumeBlockComment) {
                 this.errors.push({ code: XtnParseErrorCode.UnexpectedEndOfFile, start: { line: lastLineNo, column: lastColNo, index: lastPos }, end: undefined, message: "Unexpected end of file. Comment has not been closed with '*/'" });
+                this.popConsumer();
             }
         }
+        this.handleIncompleteScopes();
         return this.rootObj;
     }
     private crlf = false;
@@ -1160,6 +1167,8 @@ class Parser {
             }
             else {
                 this.rawText = qStr;
+                if (this.eof)
+                    this.completeRawText();
             }
         }
     }
@@ -1176,6 +1185,9 @@ class Parser {
     }
     private consumeInner(char: string, next: string, plusForChildren: boolean) {
         if (char.trimStart().length === 0) {
+            if (this.eof) {
+                this.handleIncompleteScopes();
+            }
             return;
         }
         if (this.currentScopeState.allowKeys && char === ":") {
@@ -1187,16 +1199,14 @@ class Parser {
             this.pushScope(keyValuePair, false);
             this.rawText = null;
             this.pushConsumer(this.consumePairValue);
+            if (this.eof) {
+                const pc = keyValuePair.posColon;
+                this.errors.push({ code: XtnParseErrorCode.MissingValue, start: { line: pc.line, column: pc.column! + 1, index: pc.index! + 1 }, end: undefined, message: "Expected a value" });
+                this.completeValue(new XtnNullImpl("", {}, {}));
+            }
             return;
         }
-        if (this.rawText instanceof XtnQStringImpl) {
-            this.completeValue(this.rawText);
-            this.rawText = null;
-        }
-        else if (this.rawText instanceof XtnKeyImpl) {
-            this.interpretAndCompleteValue(this.rawText);
-            this.rawText = null;
-        }
+        this.completeRawText();
         if (char === '/') {
             if (next === '/')
                 this.startComment(true);
@@ -1245,15 +1255,7 @@ class Parser {
             }
             obj = this.currentScope;
             if (obj instanceof XtnObjectImpl && obj !== this.rootObj) {
-                this.popConsumer();
-                this.popScope();
-                const parent = this.currentScope;
-                if (parent instanceof XtnExpressionImpl) {
-                    this.popScope();
-                    this.completeValue(parent);
-                }
-                else
-                    this.completeValue(obj);
+                this.completeObject(obj);
             }
             else {
                 this.errors.push({ code: XtnParseErrorCode.UnmatchedClosingBrace, start: { line: this.lineNo, column: this.colNo, index: this.pos }, end: undefined, message: "Unexpected closing brace" });
@@ -1262,17 +1264,21 @@ class Parser {
         else if (char === ']') {
             const arr = this.currentScope;
             if (arr instanceof XtnArrayImpl) {
-                this.popConsumer();
-                this.popScope();
-                this.completeValue(arr);
+                this.completeArray(arr);
             }
             else {
                 this.errors.push({ code: XtnParseErrorCode.UnmatchedClosingBracket, start: { line: this.lineNo, column: this.colNo, index: this.pos }, end: undefined, message: "Unexpected closing bracket" });
             }
         }
         else if (char === ')') {
-            const init = this.currentScope;
-            if (init instanceof XtnArgsImpl) {
+            let obj = this.currentScope;
+            if (obj instanceof XtnKeyValuePairImpl) {
+                this.completeValue(new XtnNullImpl("", {}, {}));
+                const pc = obj.posColon;
+                this.errors.push({ code: XtnParseErrorCode.MissingValue, start: { line: pc.line, column: pc.column! + 1, index: pc.index! + 1 }, end: undefined, message: "Expected a value" });
+            }
+            obj = this.currentScope;
+            if (obj instanceof XtnArgsImpl) {
                 this.popConsumer();
                 this.popScope();
                 this.pushConsumer(this.consumeTrailingSpaceAfterArgs);
@@ -1301,6 +1307,65 @@ class Parser {
             this.errors.push({ code: XtnParseErrorCode.UnrecognizedToken, start: ps, end: undefined, message: `Unexpected token '${char}'` });
         }
     }
+    private completeRawText() {
+        if (this.rawText instanceof XtnQStringImpl) {
+            this.completeValue(this.rawText);
+            this.rawText = null;
+        }
+        else if (this.rawText instanceof XtnKeyImpl) {
+            this.interpretAndCompleteValue(this.rawText);
+            this.rawText = null;
+        }
+    }
+    private completeObject(obj: XtnObjectImpl) {
+        this.popConsumer();
+        this.popScope();
+        const parent = this.currentScope;
+        if (parent instanceof XtnExpressionImpl) {
+            this.popScope();
+            this.completeValue(parent);
+        }
+        else
+            this.completeValue(obj);
+    }
+    private completeArray(arr: XtnArrayImpl) {
+        this.popConsumer();
+        this.popScope();
+        this.completeValue(arr);
+    }
+    private handleIncompleteScopes() {
+        let scope;
+        while ((scope = this.currentScope) !== this.rootObj) {
+            if (scope instanceof XtnKeyValuePairImpl) {
+                const pc = scope.posColon;
+                this.errors.push({ code: XtnParseErrorCode.MissingValue, start: { line: pc.line, column: pc.column! + 1, index: pc.index! + 1 }, end: undefined, message: "Expected a value" });
+                this.completeValue(new XtnNullImpl("", {}, {}));
+            }
+            else if (scope instanceof XtnObjectImpl) {
+                this.errors.push({ code: XtnParseErrorCode.MissingBrace, start: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, end: undefined, message: "Expected a closing brace" });
+                this.completeObject(scope);
+            }
+            else if (scope instanceof XtnArrayImpl) {
+                this.errors.push({ code: XtnParseErrorCode.MissingBracket, start: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, end: undefined, message: "Expected a closing square bracket" });
+                this.completeArray(scope);
+            }
+            else if (scope instanceof XtnArgsImpl) {
+                this.errors.push({ code: XtnParseErrorCode.MissingParenthesis, start: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, end: undefined, message: "Expected a closing parenthesis" });
+                this.popConsumer();
+                this.popScope();
+                const expr = this.popScope();
+                if (expr instanceof XtnExpressionImpl) {
+                    this.completeValue(expr);
+                }
+                else {
+                    throw new Error("Unreachable code");
+                }
+            }
+            else {
+                throw new Error("Not implemented");
+            }
+        }
+    }
 
     private consumeTrailingSpaceAfterArgs(char: string, next: string) {
         if (!this.eof && next.trimStart().length === 0)
@@ -1314,6 +1379,9 @@ class Parser {
             if (expr instanceof XtnExpressionImpl) {
                 this.completeValue(expr);
             }
+            else {
+                throw new Error("Unreachable code");
+            }
         }
     }
 
@@ -1325,21 +1393,21 @@ class Parser {
         this.consumeInner(char, next, false);
     }
 
-    private numberStartPos = -1;
+    private numberStartPos: XtnCharPosition = {};
     private decPtStartPos = -1;
     private expStartPos = -1;
     private intValue = 1n;
     private numberType: "i" | "r" | null = null;
     private startExplicitInteger(char: string, next: string) {
         this.intValue = 1n;
-        this.numberStartPos = this.pos;
+        this.numberStartPos = { line: this.lineNo, column: this.colNo, index: this.pos };
         this.numberType = "i";
         this.pushConsumer(this.consumeLeadingIntegerWhitespace);
         this.consumeLeadingIntegerWhitespace(char, next);
     }
     private consumeLeadingIntegerWhitespace(char: string, next: string) {
         // on first entry, char is the character before the integer
-        if (next.trimStart().length === 0) {
+        if (next.trimStart().length === 0 && !this.eof) {
             return;
         }
         if (next === '-' || next === '+' || isAsciiNumber(next)) {
@@ -1351,14 +1419,16 @@ class Parser {
             this.pushConsumer(this.consumeNamedNumberOrNull);
         }
         else {
-            throw new Error("This code is supposed to be unreachable");
+            const np = this.numberStartPos;
+            this.errors.push({ code: XtnParseErrorCode.MissingIntegerOrNull, start: { line: np.line, column: np.column! + 1, index: np.index! + 1 }, end: undefined, message: "Expected an integer or null" })
+            this.completeValue(new XtnIntegerImpl(null, "", true, undefined, {}, {}));
         }
     }
     private consumeNamedNumberOrNull(char: string, next: string) {
         // on first entry, char is n in null
         if (!isAsciiLetter(next)) {
             this.popConsumer();
-            const text = this.document.substring(this.numberStartPos + 1, this.pos + 1).trimStart();
+            const text = this.document.substring(this.numberStartPos.index! + 1, this.pos + 1).trimStart();
             const tu = text.toUpperCase();
             let numb;
             if (this.numberType === "i") {
@@ -1399,7 +1469,7 @@ class Parser {
     private consumeErrorWordInNumber(char: string, next: string) {
         if (!isKeyLetter(next)) {
             this.errors.push({ code: XtnParseErrorCode.UnrecognizedToken, start: { line: this.lineNo, column: this.colNo - (this.pos - this.errorWordStart), index: this.errorWordStart }, end: {line: this.lineNo, column: this.colNo + 1, index: this.pos + 1}, message: "Expected a decimal digit" });
-            const numb = new XtnIntegerImpl(null, this.document.substring(this.numberStartPos + 1, this.pos + 1).trimStart(), true, undefined, {}, {});
+            const numb = new XtnIntegerImpl(null, this.document.substring(this.numberStartPos.index! + 1, this.pos + 1).trimStart(), true, undefined, {}, {});
             this.popConsumer();
             this.completeValue(numb);
         }
@@ -1422,7 +1492,7 @@ class Parser {
                     }
                     else {
                         this.errors.push({ code: XtnParseErrorCode.UnrecognizedToken, start: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, end: undefined, message: "Expected a decimal digit" });
-                        const numb = new XtnIntegerImpl(null, this.document.substring(this.numberStartPos + 1, this.pos + 1).trimStart(), true, undefined, {}, {});
+                        const numb = new XtnIntegerImpl(null, this.document.substring(this.numberStartPos.index! + 1, this.pos + 1).trimStart(), true, undefined, {}, {});
                         this.popConsumer();
                         this.completeValue(numb);
                     }
@@ -1437,7 +1507,7 @@ class Parser {
                 if (!(next === '.' || isAsciiNumber(next))) {
                     throw new Error("This code is supposed to be unreachable");
                     this.errors.push({ code: XtnParseErrorCode.UnrecognizedToken, start: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, end: undefined, message: "Expected a decimal digit or decimal point" });
-                    const numb = new XtnIntegerImpl(null, this.document.substring(this.numberStartPos + 1, this.pos + 1).trimStart(), true, undefined, {}, {});
+                    const numb = new XtnIntegerImpl(null, this.document.substring(this.numberStartPos.index! + 1, this.pos + 1).trimStart(), true, undefined, {}, {});
                     this.popConsumer();
                     this.completeValue(numb);
                 }
@@ -1460,7 +1530,7 @@ class Parser {
             }
             else if (!isAsciiNumber(next)) {
                 this.errors.push({ code: XtnParseErrorCode.UnrecognizedToken, start: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, end: undefined, message: "Expected a decimal digit or 'e' or 'E' after a decimal point" });
-                const numb = new XtnRealNumberImpl(null, this.document.substring(this.numberStartPos + 1, this.pos + 1).trimStart(), this.numberType !== null, undefined, {}, {});
+                const numb = new XtnRealNumberImpl(null, this.document.substring(this.numberStartPos.index! + 1, this.pos + 1).trimStart(), this.numberType !== null, undefined, {}, {});
                 this.completeValue(numb);
                 return;
             }
@@ -1481,7 +1551,7 @@ class Parser {
         if (isKeyLetter(next)) return;
         this.popConsumer();
         this.errors.push({ code: XtnParseErrorCode.UnrecognizedToken, start: { line: this.lineNo, column: this.colNo - (this.pos - this.hexErrorStart), index: this.hexErrorStart }, end: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, message: "Expected a sequence of hexadecimal digits 0-9 or a-f after 0x" });
-        const numb = new XtnIntegerImpl(null, this.document.substring(this.numberStartPos + 1, this.pos + 1).trimStart(), this.numberType !== null, undefined, {}, {});
+        const numb = new XtnIntegerImpl(null, this.document.substring(this.numberStartPos.index! + 1, this.pos + 1).trimStart(), this.numberType !== null, undefined, {}, {});
         this.completeValue(numb);
         return;
     }
@@ -1497,7 +1567,7 @@ class Parser {
             }
             else {
                 this.errors.push({ code: XtnParseErrorCode.UnrecognizedToken, start: { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 }, end: undefined, message: "Expected a hexadecimal digit 0-9 or a-f after 0x" });
-                const numb = new XtnIntegerImpl(null, this.document.substring(this.numberStartPos + 1, this.pos + 1).trimStart(), this.numberType !== null, undefined, {}, {});
+                const numb = new XtnIntegerImpl(null, this.document.substring(this.numberStartPos.index! + 1, this.pos + 1).trimStart(), this.numberType !== null, undefined, {}, {});
                 this.popConsumer();
                 this.completeValue(numb);
                 return;
@@ -1523,7 +1593,7 @@ class Parser {
         const h = hexDigit(next);
         if (h === null) {
             this.popConsumer();
-            const text = this.document.substring(this.numberStartPos + (this.numberType === "i" ? 1 : 0), this.pos + 1).trimStart();
+            const text = this.document.substring(this.numberStartPos.index! + (this.numberType === "i" ? 1 : 0), this.pos + 1).trimStart();
             if (this.isLeadingZero)
                 this.intValue = 0n;
             this.completeValue(new XtnIntegerImpl(this.intValue, text, true, undefined, {}, {}));
@@ -1566,7 +1636,7 @@ class Parser {
                 }
             }
             this.popConsumer();
-            const text = this.document.substring(this.numberStartPos + (this.numberType !== null ? 1 : 0), this.pos + 1).trimStart();
+            const text = this.document.substring(this.numberStartPos.index! + (this.numberType !== null ? 1 : 0), this.pos + 1).trimStart();
             if (this.isLeadingZero)
                 this.intValue = 0n;
             if (this.numberType !== "r" && this.decPtStartPos < 0 && this.expStartPos < 0)
@@ -1583,14 +1653,14 @@ class Parser {
     }
 
     private startExplicitRealNumber(char: string, next: string) {
-        this.numberStartPos = this.pos;
+        this.numberStartPos = { line: this.lineNo, column: this.colNo, index: this.pos };
         this.numberType = "r";
         this.pushConsumer(this.consumeLeadingRealNumberWhitespace);
         this.consumeLeadingRealNumberWhitespace(char, next);
     }
     private consumeLeadingRealNumberWhitespace(char: string, next: string) {
         // on first entry, char is the character before the number
-        if (next.trimStart().length === 0) {
+        if (next.trimStart().length === 0 && !this.eof) {
             return;
         }
         if (next === '-' || next === '+' || next === '.' || isAsciiNumber(next)) {
@@ -1602,12 +1672,14 @@ class Parser {
             this.pushConsumer(this.consumeNamedNumberOrNull);
         }
         else {
-            throw new Error("This code is supposed to be unreachable.");
+            const np = this.numberStartPos;
+            this.errors.push({ code: XtnParseErrorCode.MissingRealNumberOrNull, start: { line: np.line, column: np.column! + 1, index: np.index! + 1 }, end: undefined, message: "Expected a real number or null" })
+            this.completeValue(new XtnRealNumberImpl(null, "", true, undefined, {}, {}));
         }
     }
     private startImplicitNumber(char: string, next: string) {
         this.intValue = 1n;
-        this.numberStartPos = this.pos;
+        this.numberStartPos = { line: this.lineNo, column: this.colNo, index: this.pos };
         this.numberType = null;
         this.pushConsumer(this.consumePotentialLeadingSign);
         this.consumePotentialLeadingSign(char, next);

@@ -1,0 +1,28 @@
+{
+    "$children": [
+        "", "a\u0000db","s\u00AB\u00abdffeXdf","s\uAB31\uab31dffeUdf",
+        "dafddafdsf"
+    ],
+    "$errors": [
+        {
+            "code": "InvalidEscapeSequence",
+            "start": { "line": 0, "column": 4 }
+        },
+        {
+            "code": "InvalidEscapeSequence",
+            "start": { "line": 3, "column": 1 }
+        },
+        {
+            "code": "InvalidEscapeSequence",
+            "start": { "line": 5, "column": 17 }
+        },
+        {
+            "code": "InvalidEscapeSequence",
+            "start": { "line": 7, "column": 23 }
+        },
+        {
+            "code": "UnescapedCRLF",
+            "start": { "line": 9, "column": 7 }
+        }
+    ]
+}

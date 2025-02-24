@@ -1,0 +1,27 @@
+{
+  "a": {
+    "b": null
+  },
+  "$errors":[
+    {
+        "code": "UnexpectedSlash",
+        "start": { "line": 0, "column": 4 }
+    },
+    {
+        "code": "UnexpectedSlash",
+        "start": { "line": 1, "column": 7 }
+    },
+    {
+        "code": "UnexpectedSlash",
+        "start": { "line": 2, "column": 2 }
+    },
+    {
+        "code": "MissingValue",
+        "start": { "line": 1, "column": 6 }
+    },
+    {
+        "code": "UnexpectedSlash",
+        "start": { "line": 3, "column": 1 }
+    }
+  ]
+}

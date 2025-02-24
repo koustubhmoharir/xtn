@@ -1,0 +1,11 @@
+{
+    "$children": [
+        "dafddafdsf"
+    ],
+    "$errors": [
+        {
+            "code": "UnescapedLF",
+            "start": { "line": 0, "column": 7 }
+        }
+    ]
+}

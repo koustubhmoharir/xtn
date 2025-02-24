@@ -1,5 +1,33 @@
 {
 	"a": {
 		"b": null
+	},
+	"c": {
+		"$id": "e",
+		"$args": [],
+		"$opts": {
+			"d": null
+		}
+	},
+	"d": {
+		"$id": "e",
+		"$args": [],
+		"$opts": {
+			"d": null
+		}
+	},
+	"e": {
+		"$id": "e",
+		"$args": [],
+		"$opts": {
+			"d": null
+		}
+	},
+	"f": {
+		"$id": "e",
+		"$args": [],
+		"$opts": {
+			"d": null
+		}
 	}
 }

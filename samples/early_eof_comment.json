@@ -1,0 +1,19 @@
+{
+    "a": {},
+    "$errors": [
+        {
+            "code": "UnexpectedEndOfFile",
+            "start": {
+                "line": 3,
+                "column": 2
+            }
+        },
+        {
+            "code": "MissingBrace",
+            "start": {
+                "line": 3,
+                "column": 2
+            }
+        }
+    ]
+}

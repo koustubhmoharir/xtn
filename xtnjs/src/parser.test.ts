@@ -209,69 +209,16 @@ test('match_expressions_type_args', () => {
     expect(xtn[children]).toEqual(json);
 });
 
-test('error_early_eof_comment', () => {
-    const { errors } = loadXtnWithErrors('early_eof_comment');
-    expect(errors).toMatchObject([{
-        code: XtnParseErrorCode.UnexpectedEndOfFile,
-        start: { line: 3, column: 2 }
-    }]);
-});
-
-test('error_unexpected_slash', () => {
-    const { errors } = loadXtnWithErrors('unexpected_slash');
-    expect(errors).toMatchObject([{
-        code: XtnParseErrorCode.UnexpectedSlash,
-        start: { line: 0, column: 4 }
-    }, {
-        code: XtnParseErrorCode.UnexpectedSlash,
-        start: { line: 1, column: 7 }
-    }, {
-        code: XtnParseErrorCode.UnexpectedSlash,
-        start: { line: 2, column: 2 }
-    }, {
-        code: XtnParseErrorCode.MissingValue,
-        start: { line: 1, column: 6 }
-    }, {
-        code: XtnParseErrorCode.UnexpectedSlash,
-        start: { line: 3, column: 1 }
-    }]);
-});
-
-test('errors_string', () => {
-    const { errors } = loadXtnWithErrors('errors_string');
-    expect(errors).toMatchObject([{
-        code: XtnParseErrorCode.InvalidEscapeSequence,
-        start: { line: 0, column: 4 }
-    }, {
-        code: XtnParseErrorCode.InvalidEscapeSequence,
-        start: { line: 3, column: 1 }
-    }, {
-        code: XtnParseErrorCode.InvalidEscapeSequence,
-        start: { line: 5, column: 17 }
-    }, {
-        code: XtnParseErrorCode.InvalidEscapeSequence,
-        start: { line: 7, column: 23 }
-    }, {
-        code: XtnParseErrorCode.UnescapedCRLF,
-        start: { line: 9, column: 7 }
-    }]);
-});
-
-test('errors_string2', () => {
-    const { errors } = loadXtnWithErrors('errors_string2');
-    expect(errors).toMatchObject([{
-        code: XtnParseErrorCode.UnescapedLF,
-        start: { line: 0, column: 7 }
-    }]);
-});
-
-test('errors_string3', () => {
-    const { errors } = loadXtnWithErrors('errors_string3');
-    expect(errors).toMatchObject([{
-        code: XtnParseErrorCode.UnescapedCR,
-        start: { line: 0, column: 7 }
-    }]);
-});
+function extractErrors(json: any) {
+    if (!json) return [];
+    const errors = json["$errors"] as any[];
+    for (const e of errors) {
+        if ("code" in e)
+            e.code = XtnParseErrorCode[e.code];
+    }
+    delete json["$errors"];
+    return errors;
+}
 
 function convert_children(json: any) {
     if (typeof json === "object" && json != null) {
@@ -286,6 +233,36 @@ function convert_children(json: any) {
         }
     }
 }
+
+function matchWithErrors(xtnName: string, jsonName?: string) {
+    const { partial, errors } = loadXtnWithErrors(xtnName);
+    const xtn = partial.data(env);
+    const json = loadJson(jsonName ?? xtnName);
+    convert_children(json);
+    const expErrors = extractErrors(json);
+    expect(xtn).toEqual(json);
+    expect(errors).toMatchObject(expErrors);
+}
+
+test('error_early_eof_comment', () => {
+    matchWithErrors("early_eof_comment");
+});
+
+test('error_unexpected_slash', () => {
+    matchWithErrors("unexpected_slash");
+});
+
+test('errors_string', () => {
+    matchWithErrors("errors_string");
+});
+
+test('errors_string2', () => {
+    matchWithErrors("errors_string2");
+});
+
+test('errors_string3', () => {
+    matchWithErrors("errors_string3");
+});
 
 test('match_space_sep1', () => {
     const xtn = loadXtn('space_sep1').data();
@@ -602,12 +579,28 @@ test('error_missing_value', () => {
     const { errors, partial } = loadXtnWithErrors('missing_value');
     const json = loadJson('missing_value');
     convert_children(json);
-    const xtn = partial.data();
+    const xtn = partial.data(env);
     expect(xtn).toEqual(json);
     expect(errors).toMatchObject([
         {
             code: XtnParseErrorCode.MissingValue,
             start: { line: 1, column: 6 }
+        },
+        {
+            code: XtnParseErrorCode.MissingValue,
+            start: { line: 4, column: 8 }
+        },
+        {
+            code: XtnParseErrorCode.MissingRealNumberOrNull,
+            start: { line: 5, column: 9 }
+        },
+        {
+            code: XtnParseErrorCode.MissingBooleanOrNull,
+            start: { line: 6, column: 9 }
+        },
+        {
+            code: XtnParseErrorCode.MissingIntegerOrNull,
+            start: { line: 7, column: 9 }
         }
     ]);
 });
@@ -665,6 +658,210 @@ test('error_expressions', () => {
         {
             code: XtnParseErrorCode.MissingClosingAngledBracket,
             start: { line: 5, column: 19 }
+        }
+    ]);
+});
+
+
+test('match_eof1', () => {
+    const xtn = loadXtn('eof1').data(env);
+    const json = loadJson('eof1');
+    convert_children(json);
+
+    expect(xtn).toEqual(json);
+});
+
+
+test('match_eof2', () => {
+    const xtn = loadXtn('eof2').data(env);
+    const json = loadJson('eof1');
+    convert_children(json);
+
+    expect(xtn).toEqual(json);
+});
+
+
+test('match_eof3', () => {
+    const xtn = loadXtn('eof3').data(env);
+    const json = loadJson('eof1');
+    convert_children(json);
+
+    expect(xtn).toEqual(json);
+});
+
+
+test('match_eof4', () => {
+    const xtn = loadXtn('eof4').data(env);
+    const json = loadJson('eof1');
+    convert_children(json);
+
+    expect(xtn).toEqual(json);
+});
+
+
+test('match_eof5', () => {
+    const xtn = loadXtn('eof5').data(env);
+    const json = loadJson('eof1');
+    convert_children(json);
+
+    expect(xtn).toEqual(json);
+});
+
+
+test('match_eof6', () => {
+    const xtn = loadXtn('eof6').data(env);
+    const json = loadJson('eof6');
+    convert_children(json);
+
+    expect(xtn).toEqual(json);
+});
+
+
+test('match_eof7', () => {
+    const xtn = loadXtn('eof7').data(env);
+    const json = loadJson('eof7');
+    convert_children(json);
+
+    expect(xtn).toEqual(json);
+});
+
+
+test('match_eof8', () => {
+    const xtn = loadXtn('eof8').data(env);
+    const json = loadJson('eof7');
+    convert_children(json);
+
+    expect(xtn).toEqual(json);
+});
+
+
+test('match_eof9', () => {
+    const xtn = loadXtn('eof9').data(env);
+    const json = loadJson('eof9');
+    convert_children(json);
+
+    expect(xtn).toEqual(json);
+});
+
+
+test('match_eof10', () => {
+    const xtn = loadXtn('eof10').data(env);
+    const json = loadJson('eof10');
+    convert_children(json);
+
+    expect(xtn).toEqual(json);
+});
+
+
+test('error_eof1', () => {
+    const { errors, partial } = loadXtnWithErrors('error_eof1');
+    const json = loadJson('error_eof1');
+    convert_children(json);
+    const xtn = partial.data(env);
+
+    expect(xtn).toEqual(json);
+    expect(errors).toMatchObject([
+        {
+            code: XtnParseErrorCode.MissingValue,
+            start: { line: 0, column: 2 }
+        }
+    ]);
+});
+
+test('error_eof2', () => {
+    const { errors, partial } = loadXtnWithErrors('error_eof2');
+    const json = loadJson('error_eof1');
+    convert_children(json);
+    const xtn = partial.data(env);
+
+    expect(xtn).toEqual(json);
+    expect(errors).toMatchObject([
+        {
+            code: XtnParseErrorCode.MissingValue,
+            start: { line: 0, column: 2 }
+        }
+    ]);
+});
+
+test('error_eof3', () => {
+    const { errors, partial } = loadXtnWithErrors('error_eof3');
+    const json = loadJson('error_eof1');
+    convert_children(json);
+    const xtn = partial.data(env);
+
+    expect(xtn).toEqual(json);
+    expect(errors).toMatchObject([
+        {
+            code: XtnParseErrorCode.MissingRealNumberOrNull,
+            start: { line: 0, column: 4 }
+        }
+    ]);
+});
+
+test('error_eof4', () => {
+    const { errors, partial } = loadXtnWithErrors('error_eof4');
+    const json = loadJson('error_eof1');
+    convert_children(json);
+    const xtn = partial.data(env);
+
+    expect(xtn).toEqual(json);
+    expect(errors).toMatchObject([
+        {
+            code: XtnParseErrorCode.MissingIntegerOrNull,
+            start: { line: 0, column: 4 }
+        }
+    ]);
+});
+
+test('error_eof5', () => {
+    const { errors, partial } = loadXtnWithErrors('error_eof5');
+    const json = loadJson('error_eof1');
+    convert_children(json);
+    const xtn = partial.data(env);
+
+    expect(xtn).toEqual(json);
+    expect(errors).toMatchObject([
+        {
+            code: XtnParseErrorCode.MissingBooleanOrNull,
+            start: { line: 0, column: 4 }
+        }
+    ]);
+});
+
+test('error_eof6', () => {
+    const { errors, partial } = loadXtnWithErrors('error_eof6');
+    const json = loadJson('error_eof6');
+    convert_children(json);
+    const xtn = partial.data(env);
+
+    expect(xtn).toEqual(json);
+    expect(errors).toMatchObject([
+        {
+            code: XtnParseErrorCode.MissingBracket,
+            start: { line: 1, column: 8 }
+        },
+        {
+            code: XtnParseErrorCode.MissingBrace,
+            start: { line: 1, column: 8 }
+        }
+    ]);
+});
+
+test('error_eof7', () => {
+    const { errors, partial } = loadXtnWithErrors('error_eof7');
+    const json = loadJson('error_eof6');
+    convert_children(json);
+    const xtn = partial.data(env);
+
+    expect(xtn).toEqual(json);
+    expect(errors).toMatchObject([
+        {
+            code: XtnParseErrorCode.MissingBracket,
+            start: { line: 1, column: 9 }
+        },
+        {
+            code: XtnParseErrorCode.MissingBrace,
+            start: { line: 1, column: 9 }
         }
     ]);
 });
