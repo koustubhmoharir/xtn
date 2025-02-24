@@ -2,5 +2,51 @@
     "a": " x",
     "b": "x",
     "c": "x\r\ny",
-    "d": " x\r\ny"
+    "d": " x\r\ny",
+    "$errors": [
+        {
+            "code": "UnexpectedTextOnStartTripleQuotes",
+            "start": {
+                "line": 0,
+                "column": 6
+            },
+            "end": {
+                "line": 0,
+                "column": 8
+            }
+        },
+        {
+            "code": "UnexpectedTextOnStartTripleQuotes",
+            "start": {
+                "line": 2,
+                "column": 6
+            },
+            "end": {
+                "line": 2,
+                "column": 7
+            }
+        },
+        {
+            "code": "UnexpectedTextOnStartTripleQuotes",
+            "start": {
+                "line": 4,
+                "column": 9
+            },
+            "end": {
+                "line": 4,
+                "column": 10
+            }
+        },
+        {
+            "code": "UnexpectedTextOnStartTripleQuotes",
+            "start": {
+                "line": 7,
+                "column": 9
+            },
+            "end": {
+                "line": 7,
+                "column": 11
+            }
+        }
+    ]
 }

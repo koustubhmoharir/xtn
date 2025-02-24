@@ -1,1 +1,44 @@
-{	"a": "x",	"b": "x\ny",	"c": "x\ny",	"d": "x\ny\"",	"e": "x\ny",	"f": "x\n  y"}
+{
+	"a": "x",
+	"b": "x\ny",
+	"c": "x\ny",
+	"d": "x\ny\"",
+	"e": "x\ny",
+	"f": "x\n  y",
+	"$errors":[
+		{
+            "code": "BadIndentation",
+            "start": { "line": 1, "column": 0
+			}
+		},
+		{
+            "code": "BadIndentation",
+            "start": { "line": 5, "column": 3
+			}
+		},
+		{
+            "code": "BadIndentation",
+            "start": { "line": 9, "column": 0
+			}
+		},
+		{
+            "code": "BadIndentation",
+            "start": { "line": 14, "column": 0
+			}
+		},
+		{
+            "code": "BadIndentation",
+            "start": { "line": 18, "column": 0
+			},
+            "end": { "line": 18, "column": 4
+			}
+		},
+		{
+            "code": "BadIndentation",
+            "start": { "line": 22, "column": 2
+			},
+            "end": { "line": 22, "column": 4
+			}
+		}
+	]
+}

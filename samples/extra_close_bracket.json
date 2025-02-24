@@ -6,5 +6,12 @@
         {
             "key2": "value2"
         }
+    ],
+    "$errors":[
+        {
+            "code": "UnmatchedClosingBracket",
+            "start": { "line": 8, "column": 0
+            }
+        }
     ]
 }

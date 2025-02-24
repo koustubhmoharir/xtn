@@ -1,61 +1,90 @@
-[{
-    "$id": "Point",
-    "$args": [1.0, 2.0]
-},{
-    "$id": "Point",
-    "$args": [1.0],
-    "y": 2.0
-},{
-    "$id": "Point",
-    "$args": [],
-    "$opts": {
-        "x": 1.0
-    },
-    "y": 2.0
-},{
-    "$id": "Point",
-    "$args": [],
-    "$opts": {
-        "x": 1.0
-    },
-    "y": 2.0
-},{
-    "$id": "Point",
-    "$args": [],
-    "$opts": {
-        "x": 1.0,
-        "y": 2.0
-    }
-},{
-    "$id": "Point",
-    "$args": [],
-    "$opts": {
-        "x": 1.0,
-        "y": 2.0
-    }
-},{
-    "$id": {
-        "name": "Geometry.Point",
-        "segments": ["Geometry", "Point"]
-    }
-},{
-    "$id": {
-        "name": "Geometry.Point",
-        "segments": ["Geometry", "Point"]
-    }
-},{
-    "$id": {
-        "name": "Geometry.Point",
-        "segments": ["Geometry", "Point"]
-    }
-},{
-    "$id": "Point"
-},{
-    "$id": "Point",
-    "x": 1.0,
-    "y": 2.0
-},{
-    "$id": "Point",
-    "x": 1.0,
-    "y": 2.0
-}]
+{
+    "$children": [
+        {
+            "$id": "Point",
+            "$args": [
+                1.0,
+                2.0
+            ]
+        },
+        {
+            "$id": "Point",
+            "$args": [
+                1.0
+            ],
+            "y": 2.0
+        },
+        {
+            "$id": "Point",
+            "$args": [],
+            "$opts": {
+                "x": 1.0
+            },
+            "y": 2.0
+        },
+        {
+            "$id": "Point",
+            "$args": [],
+            "$opts": {
+                "x": 1.0
+            },
+            "y": 2.0
+        },
+        {
+            "$id": "Point",
+            "$args": [],
+            "$opts": {
+                "x": 1.0,
+                "y": 2.0
+            }
+        },
+        {
+            "$id": "Point",
+            "$args": [],
+            "$opts": {
+                "x": 1.0,
+                "y": 2.0
+            }
+        },
+        {
+            "$id": {
+                "name": "Geometry.Point",
+                "segments": [
+                    "Geometry",
+                    "Point"
+                ]
+            }
+        },
+        {
+            "$id": {
+                "name": "Geometry.Point",
+                "segments": [
+                    "Geometry",
+                    "Point"
+                ]
+            }
+        },
+        {
+            "$id": {
+                "name": "Geometry.Point",
+                "segments": [
+                    "Geometry",
+                    "Point"
+                ]
+            }
+        },
+        {
+            "$id": "Point"
+        },
+        {
+            "$id": "Point",
+            "x": 1.0,
+            "y": 2.0
+        },
+        {
+            "$id": "Point",
+            "x": 1.0,
+            "y": 2.0
+        }
+    ]
+}

@@ -2,13 +2,20 @@
     "a": {
         "$id": {
             "name": ".a",
-            "segments": ["", "a"]
+            "segments": [
+                "",
+                "a"
+            ]
         }
     },
     "b": {
         "$id": {
             "name": "a..a",
-            "segments": ["a", "", "a"]
+            "segments": [
+                "a",
+                "",
+                "a"
+            ]
         }
     },
     "c": {
@@ -18,9 +25,12 @@
     "d": {
         "$id": {
             "name": "Point<int>",
-            "segments": [{
+            "segments": [
+                {
                     "name": "Point",
-                    "args": ["int"]
+                    "args": [
+                        "int"
+                    ]
                 }
             ]
         },
@@ -29,13 +39,19 @@
     "e": {
         "$id": {
             "name": "Point<int<X,Y>>",
-            "segments": [{
+            "segments": [
+                {
                     "name": "Point",
-                    "args": [{
+                    "args": [
+                        {
                             "name": "int<X,Y>",
-                            "segments": [{
+                            "segments": [
+                                {
                                     "name": "int",
-                                    "args": ["X", "Y"]
+                                    "args": [
+                                        "X",
+                                        "Y"
+                                    ]
                                 }
                             ]
                         }
@@ -48,15 +64,23 @@
     "f": {
         "$id": {
             "name": "Point<int<X,Y.>>",
-            "segments": [{
+            "segments": [
+                {
                     "name": "Point",
-                    "args": [{
+                    "args": [
+                        {
                             "name": "int<X,Y.>",
-                            "segments": [{
+                            "segments": [
+                                {
                                     "name": "int",
-                                    "args": ["X", {
+                                    "args": [
+                                        "X",
+                                        {
                                             "name": "Y.",
-                                            "segments": ["Y", ""]
+                                            "segments": [
+                                                "Y",
+                                                ""
+                                            ]
                                         }
                                     ]
                                 }
@@ -67,5 +91,56 @@
             ]
         },
         "$args": []
-    }
+    },
+    "$errors": [
+        {
+            "code": "MissingIdentifierName",
+            "start": {
+                "line": 0,
+                "column": 4
+            }
+        },
+        {
+            "code": "MissingIdentifierName",
+            "start": {
+                "line": 1,
+                "column": 7
+            }
+        },
+        {
+            "code": "MissingIdentifierName",
+            "start": {
+                "line": 2,
+                "column": 4
+            }
+        },
+        {
+            "code": "MissingClosingAngledBracket",
+            "start": {
+                "line": 3,
+                "column": 14
+            }
+        },
+        {
+            "code": "MissingClosingAngledBracket",
+            "start": {
+                "line": 4,
+                "column": 18
+            }
+        },
+        {
+            "code": "MissingIdentifierName",
+            "start": {
+                "line": 5,
+                "column": 19
+            }
+        },
+        {
+            "code": "MissingClosingAngledBracket",
+            "start": {
+                "line": 5,
+                "column": 19
+            }
+        }
+    ]
 }

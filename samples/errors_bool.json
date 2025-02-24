@@ -10,5 +10,34 @@
 	"e": null,
 	"$children": [
 		1.0
+	],
+	"$errors":[
+		{
+            "code": "MissingBooleanOrNull",
+            "start": { "line": 1, "column": 5
+			}
+		},
+		{
+            "code": "MissingBooleanOrNull",
+            "start": { "line": 4, "column": 5
+			}
+		},
+		{
+            "code": "UnrecognizedToken",
+            "start": { "line": 6, "column": 5
+			}
+		},
+		{
+            "code": "MissingBooleanOrNull",
+            "start": { "line": 7, "column": 4
+			}
+		},
+		{
+            "code": "UnrecognizedToken",
+            "start": { "line": 8, "column": 4
+			},
+            "end": { "line": 8, "column": 9
+			}
+		}
 	]
 }

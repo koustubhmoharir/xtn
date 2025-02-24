@@ -29,5 +29,42 @@
 		"$opts": {
 			"d": null
 		}
-	}
+	},
+	"$errors": [
+		{
+			"code": "MissingValue",
+			"start": {
+				"line": 1,
+				"column": 6
+			}
+		},
+		{
+			"code": "MissingValue",
+			"start": {
+				"line": 4,
+				"column": 8
+			}
+		},
+		{
+			"code": "MissingRealNumberOrNull",
+			"start": {
+				"line": 5,
+				"column": 9
+			}
+		},
+		{
+			"code": "MissingBooleanOrNull",
+			"start": {
+				"line": 6,
+				"column": 9
+			}
+		},
+		{
+			"code": "MissingIntegerOrNull",
+			"start": {
+				"line": 7,
+				"column": 9
+			}
+		}
+	]
 }

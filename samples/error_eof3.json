@@ -2,10 +2,10 @@
     "a": null,
     "$errors": [
         {
-            "code": "MissingValue",
+            "code": "MissingRealNumberOrNull",
             "start": {
                 "line": 0,
-                "column": 2
+                "column": 4
             }
         }
     ]

@@ -7,14 +7,14 @@
             "code": "MissingBracket",
             "start": {
                 "line": 1,
-                "column": 8
+                "column": 9
             }
         },
         {
             "code": "MissingBrace",
             "start": {
                 "line": 1,
-                "column": 8
+                "column": 9
             }
         }
     ]

@@ -7,5 +7,28 @@
         "y",
         ":",
         "something"
+    ],
+    "$errors": [
+        {
+            "code": "UnrecognizedToken",
+            "start": {
+                "line": 4,
+                "column": 4
+            }
+        },
+        {
+            "code": "UnrecognizedToken",
+            "start": {
+                "line": 4,
+                "column": 6
+            }
+        },
+        {
+            "code": "UnrecognizedToken",
+            "start": {
+                "line": 4,
+                "column": 7
+            }
+        }
     ]
 }

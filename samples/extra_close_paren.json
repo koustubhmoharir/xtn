@@ -6,5 +6,21 @@
         {
             "key2": "value2"
         }
+    ],
+    "$errors": [
+        {
+            "code": "UnmatchedClosingParenthesis",
+            "start": {
+                "line": 7,
+                "column": 4
+            }
+        },
+        {
+            "code": "UnmatchedClosingParenthesis",
+            "start": {
+                "line": 9,
+                "column": 0
+            }
+        }
     ]
 }

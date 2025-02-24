@@ -1,135 +1,207 @@
-[{
-    "$id": {
-        "name": "Geometry.Point<int<A,Geometry.B<C>>>",
-        "segments": [
-            "Geometry",
-            {
-                "name": "Point",
-                "args": [{
-                    "name": "int<A,Geometry.B<C>>",
-                    "segments": [{
-                        "name": "int",
+{
+    "$children": [
+        {
+            "$id": {
+                "name": "Geometry.Point<int<A,Geometry.B<C>>>",
+                "segments": [
+                    "Geometry",
+                    {
+                        "name": "Point",
                         "args": [
-                            "A", {
-                                "name": "Geometry.B<C>",
+                            {
+                                "name": "int<A,Geometry.B<C>>",
                                 "segments": [
-                                    "Geometry",
                                     {
-                                        "name": "B",
-                                        "args": ["C"]
+                                        "name": "int",
+                                        "args": [
+                                            "A",
+                                            {
+                                                "name": "Geometry.B<C>",
+                                                "segments": [
+                                                    "Geometry",
+                                                    {
+                                                        "name": "B",
+                                                        "args": [
+                                                            "C"
+                                                        ]
+                                                    }
+                                                ]
+                                            }
+                                        ]
                                     }
                                 ]
                             }
                         ]
-                    }]
-                }]
+                    }
+                ]
             }
-        ]
-    }
-},{
-    "$id": {
-        "name": "Geometry.Point<int>",
-        "segments": [
-            "Geometry",
-            {
-                "name": "Point",
-                "args": ["int"]
+        },
+        {
+            "$id": {
+                "name": "Geometry.Point<int>",
+                "segments": [
+                    "Geometry",
+                    {
+                        "name": "Point",
+                        "args": [
+                            "int"
+                        ]
+                    }
+                ]
             }
-        ]
-    }
-},{
-    "$id": {
-        "name": "Point<int<A,B<C>>>",
-        "segments": [{
-            "name": "Point",
-            "args": [{
-                "name": "int<A,B<C>>",
-                "segments": [{
-                    "name": "int",
-                    "args": [
-                    "A",{
-                        "name": "B<C>",
-                        "segments": [{
-                            "name": "B",
-                            "args": ["C"]
-                        }]
-                    }]
-                }]
-            }]
-        }]
-    }
-},{
-    "$id": {
-        "name": "Point<int<A>>",
-        "segments": [{
-            "name": "Point",
-            "args": [{
-                "name": "int<A>",
-                "segments": [{
-                    "name": "int",
-                    "args": ["A"]
-                }]
-            }]
-        }]
-    }
-},{
-    "$id": {
-        "name": "Point<int<A>>",
-        "segments": [{
-            "name": "Point",
-            "args": [{
-                "name": "int<A>",
-                "segments": [{
-                    "name": "int",
-                    "args": ["A"]
-                }]
-            }]
-        }]
-    }
-},{
-    "$id": {
-        "name": "Point<int>",
-        "segments": [{
-            "name": "Point",
-            "args": ["int"]
-        }]
-    }
-},{
-    "$id": {
-        "name": "Point<int,double>",
-        "segments": [{
-            "name": "Point",
-            "args": ["int", "double"]
-        }]
-    },
-    "$args": []
-},{
-    "$id": {
-        "name": "Point<int,double>",
-        "segments": [{
-            "name": "Point",
-            "args": ["int", "double"]
-        }]
-    }
-},{
-    "$id": {
-        "name": "Point<int,double>",
-        "segments": [{
-            "name": "Point",
-            "args": ["int", "double"]
-        }]
-    }
-},{
-    "$id": "Point"
-},{
-    "$id": {
-        "name": "Geometry<int>.Point",
-        "segments": [
-            {
-                "name": "Geometry",
-                "args": ["int"]
+        },
+        {
+            "$id": {
+                "name": "Point<int<A,B<C>>>",
+                "segments": [
+                    {
+                        "name": "Point",
+                        "args": [
+                            {
+                                "name": "int<A,B<C>>",
+                                "segments": [
+                                    {
+                                        "name": "int",
+                                        "args": [
+                                            "A",
+                                            {
+                                                "name": "B<C>",
+                                                "segments": [
+                                                    {
+                                                        "name": "B",
+                                                        "args": [
+                                                            "C"
+                                                        ]
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "$id": {
+                "name": "Point<int<A>>",
+                "segments": [
+                    {
+                        "name": "Point",
+                        "args": [
+                            {
+                                "name": "int<A>",
+                                "segments": [
+                                    {
+                                        "name": "int",
+                                        "args": [
+                                            "A"
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "$id": {
+                "name": "Point<int<A>>",
+                "segments": [
+                    {
+                        "name": "Point",
+                        "args": [
+                            {
+                                "name": "int<A>",
+                                "segments": [
+                                    {
+                                        "name": "int",
+                                        "args": [
+                                            "A"
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "$id": {
+                "name": "Point<int>",
+                "segments": [
+                    {
+                        "name": "Point",
+                        "args": [
+                            "int"
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "$id": {
+                "name": "Point<int,double>",
+                "segments": [
+                    {
+                        "name": "Point",
+                        "args": [
+                            "int",
+                            "double"
+                        ]
+                    }
+                ]
             },
-            "Point"
-        ]
-    }
-}]
+            "$args": []
+        },
+        {
+            "$id": {
+                "name": "Point<int,double>",
+                "segments": [
+                    {
+                        "name": "Point",
+                        "args": [
+                            "int",
+                            "double"
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "$id": {
+                "name": "Point<int,double>",
+                "segments": [
+                    {
+                        "name": "Point",
+                        "args": [
+                            "int",
+                            "double"
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "$id": "Point"
+        },
+        {
+            "$id": {
+                "name": "Geometry<int>.Point",
+                "segments": [
+                    {
+                        "name": "Geometry",
+                        "args": [
+                            "int"
+                        ]
+                    },
+                    "Point"
+                ]
+            }
+        }
+    ]
+}
