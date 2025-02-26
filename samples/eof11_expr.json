@@ -1,0 +1,15 @@
+{
+    "a": {
+        "$id": {
+            "name": "a<int>",
+            "segments": [
+                {
+                    "name": "a",
+                    "args": [
+                        "int"
+                    ]
+                }
+            ]
+        }
+    }
+}

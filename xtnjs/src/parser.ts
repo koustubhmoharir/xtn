@@ -1834,14 +1834,15 @@ class Parser {
     private segPrevCharPos: XtnCharPosition = {};
     private consumeLeadingSegmentSpace(char: string, next: string) {
         // on first entry char is the character before the segment starts
-        if (next.trimStart().length === 0)
-            return;
         if (next === '_' || isAsciiLetter(next)) {
             this.popConsumer();
             this.segStartPos = this.pos + 1;
             this.pushConsumer(this.consumeIdentifierSegment);
         }
         else {
+            if (next.trimStart().length === 0 && !this.eof) {
+                return;
+            }
             const sp = this.segPrevCharPos;
             this.errors.push({ code: XtnParseErrorCode.MissingIdentifierName, start: { line: sp.line, column: sp.column! + 1, index: sp.index! + 1 }, end: undefined, message: "Expected an identifier name" });
             this.pushScope(new XtnIdentifierSegmentImpl("", {}, {}), false);
@@ -1925,7 +1926,7 @@ class Parser {
     private consumeSegArgs(char: string, next: string) {
         const identifier = new XtnIdentifierImpl({}, {});
         this.pushScope(identifier, false);
-        this.segPrevCharPos = { line: this.lineNo, column: this.colNo + 1, index: this.pos + 1 };
+        this.segPrevCharPos = { line: this.lineNo, column: this.colNo, index: this.pos };
         this.pushConsumer(this.consumeLeadingSegmentSpace);
         this.consumeLeadingSegmentSpace(char, next);
     }

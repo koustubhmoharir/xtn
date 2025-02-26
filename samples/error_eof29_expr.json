@@ -1,0 +1,36 @@
+{
+    "a": {
+        "b": [{
+            "$id": {
+                "name": "a.",
+                "segments": [
+                    "a",
+                    ""
+                ]
+            }
+        }]
+    },
+    "$errors": [
+        {
+            "code": "MissingIdentifierName",
+            "start": {
+                "line": 1,
+                "column": 13
+            }
+        },
+        {
+            "code": "MissingBracket",
+            "start": {
+                "line": 1,
+                "column": 13
+            }
+        },
+        {
+            "code": "MissingBrace",
+            "start": {
+                "line": 1,
+                "column": 13
+            }
+        }
+    ]
+}

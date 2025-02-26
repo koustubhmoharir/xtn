@@ -334,6 +334,16 @@ test('match_eof10', () => {
 });
 
 
+test('match_eof11_expr', () => {
+    matchValid("eof11_expr");
+});
+
+
+test('match_eof12_expr', () => {
+    matchValid("eof12_expr");
+});
+
+
 test('error_eof1', () => {
     matchWithErrors("error_eof1");
 });
@@ -440,4 +450,24 @@ test('error_eof26', () => {
 
 test('error_eof27', () => {
     matchWithErrors("error_eof27");
+});
+
+test('error_eof28_expr', () => {
+    matchWithErrors("error_eof28_expr");
+});
+
+test('error_eof29_expr', () => {
+    matchWithErrors("error_eof29_expr");
+});
+
+test('error_eof30_expr', () => {
+    matchWithErrors("error_eof30_expr");
+});
+
+test('error_eof31_expr', () => {
+    matchWithErrors("error_eof31_expr");
+});
+
+test('error_eof32_expr', () => {
+    matchWithErrors("error_eof32_expr");
 });

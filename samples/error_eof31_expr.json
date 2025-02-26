@@ -1,0 +1,33 @@
+{
+    "a": {
+        "b": [
+            {
+                "$id": "a",
+                "$args": []
+            }
+        ]
+    },
+    "$errors": [
+        {
+            "code": "MissingParenthesis",
+            "start": {
+                "line": 1,
+                "column": 13
+            }
+        },
+        {
+            "code": "MissingBracket",
+            "start": {
+                "line": 1,
+                "column": 13
+            }
+        },
+        {
+            "code": "MissingBrace",
+            "start": {
+                "line": 1,
+                "column": 13
+            }
+        }
+    ]
+}

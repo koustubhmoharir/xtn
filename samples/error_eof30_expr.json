@@ -1,0 +1,47 @@
+{
+    "a": {
+        "b": [
+            {
+                "$id": {
+                    "name": "a<>",
+                    "segments": [
+                        {
+                            "name": "a",
+                            "args": [""]
+                        }
+                    ]
+                }
+            }
+        ]
+    },
+    "$errors": [
+        {
+            "code": "MissingIdentifierName",
+            "start": {
+                "line": 1,
+                "column": 13
+            }
+        },
+        {
+            "code": "MissingClosingAngledBracket",
+            "start": {
+                "line": 1,
+                "column": 13
+            }
+        },
+        {
+            "code": "MissingBracket",
+            "start": {
+                "line": 1,
+                "column": 13
+            }
+        },
+        {
+            "code": "MissingBrace",
+            "start": {
+                "line": 1,
+                "column": 13
+            }
+        }
+    ]
+}
