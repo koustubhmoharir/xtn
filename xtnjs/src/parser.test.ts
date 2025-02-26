@@ -1,8 +1,9 @@
 import { test, expect } from "vitest";
-import { loadJson, loadXtn, loadXtnWithErrors } from "./testutils";
-import { XtnParseErrorCode, children, type XtnEnvironment, type XtnIdentifier, type XtnIdentifierSegment } from "./parser";
+import { loadJson, loadXtn, loadXtnWithErrors, loadXtnWithErrorsFromString } from "./testutils";
+import { XtnParseErrorCode, type XtnEnvironment, type XtnIdentifier, type XtnIdentifierSegment, type XtnDataObject } from "./parser";
 
 
+const children = Symbol("children");
 
 function segToJSON(seg: XtnIdentifierSegment) {
     if (seg.args?.length) {
@@ -26,7 +27,7 @@ function identifierToJSON(id: XtnIdentifier): any {
 }
 
 const env: XtnEnvironment = {
-    construct(id, args, opts) {
+    resolve(id, args, opts) {
         const obj = { $id: identifierToJSON(id) } as any;
         if (args && opts) {
             obj.$args = args;
@@ -34,6 +35,16 @@ const env: XtnEnvironment = {
                 obj.$opts = opts;
         }
         return obj;
+    },
+    assign(obj, key, value) {
+        obj[key] = value;
+    },
+    append(obj, value) {
+        let c = (obj as any)[children];
+        if (!c) {
+            (obj as any)[children] = c = [];
+        }
+        c.push(value);
     },
 };
 
@@ -84,14 +95,14 @@ test('match_sample1', () => {
 });
 
 test('match_sample1_json', () => {
-    const xtn = loadXtn('sample1', true).data()[children]![0];
+    const xtn = loadXtn('sample1', true).data();
     const json = loadJson('sample1');
 
     expect(xtn).toEqual(json);
 });
 
 test('convert_nbsp', () => {
-    const xtn = loadXtn('convert_nbsp').data();
+    const xtn = loadXtn('convert_nbsp').data() as XtnDataObject;
 
     expect(xtn['key1']).toBe('a  b    c d');
 });
@@ -102,7 +113,7 @@ test('match_complex_text', () => {
 });
 
 test('match_complex_text_json', () => {
-    const xtn = loadXtn('complex_text', true).data()[children]![0];
+    const xtn = loadXtn('complex_text', true).data();
     const json = loadJson('complex_text');
 
     expect(xtn).toEqual(json);
@@ -168,7 +179,7 @@ test('match_explicit_neg_reals3', () => {
 });
 
 test('test_named_reals', () => {
-    const xtn = loadXtn('named_reals').data();
+    const xtn = loadXtn('named_reals').data() as XtnDataObject;
 
     expect(xtn["o"]).toEqual(Number.NaN);
     expect(xtn["p"]).toEqual(Number.NaN);

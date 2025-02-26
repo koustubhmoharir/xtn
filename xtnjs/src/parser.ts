@@ -53,49 +53,59 @@ export interface XtnPrimitive<T> extends XtnElement {
 export interface XtnSString extends XtnPrimitive<string> {
     readonly type: "sstring";
     readonly explicit: true;
+    data(env?: XtnEnvironment): string;
 }
 
 export interface XtnQString extends XtnPrimitive<string> {
     readonly type: "qstring";
     readonly explicit: true;
+    data(env?: XtnEnvironment): string;
 }
 
 export interface XtnMString extends XtnPrimitive<string> {
     readonly type: "mstring";
     readonly explicit: true;
     readonly indent: string;
+    data(env?: XtnEnvironment): string;
 }
 
 export interface XtnInteger extends XtnPrimitive<bigint | null> {
     readonly type: "integer";
+    data(env?: XtnEnvironment): bigint | number | null;
 }
 
 export interface XtnRealNumber extends XtnPrimitive<number | null> {
     readonly type: "real";
+    data(env?: XtnEnvironment): number | null;
 }
 
 export interface XtnBoolean extends XtnPrimitive<boolean | null> {
     readonly type: "boolean";
+    data(env?: XtnEnvironment): boolean | null;
 }
 
 export interface XtnErrorToken extends XtnPrimitive<string> {
     readonly type: "errortoken";
     readonly explicit: false;
+    data(env?: XtnEnvironment): string;
 }
 
 export interface XtnReference extends XtnPrimitive<string> {
     readonly type: "reference";
     readonly explicit: true;
+    data(env?: XtnEnvironment): XtnDataValue;
 }
 
 export interface XtnNull extends XtnPrimitive<null> {
     readonly type: "null";
     readonly explicit: false;
+    data(env?: XtnEnvironment): null;
 }
 
 export interface XtnArray extends XtnElement {
     readonly type: "array";
     readonly items: readonly XtnValue[];
+    data(env?: XtnEnvironment): XtnDataValue[];
 }
 
 export interface XtnIdentifierSegment extends XtnElement {
@@ -115,6 +125,7 @@ export interface XtnExpression extends XtnElement {
     readonly identifier: XtnIdentifier;
     readonly args: XtnArgs | null;
     readonly initializer: XtnObject | null;
+    data(env?: XtnEnvironment): XtnDataValue;
 }
 
 export interface XtnKeyValuePair {
@@ -132,18 +143,17 @@ export interface XtnArgs extends XtnValueOrPairList {
     readonly type: "functionargs";
 }
 
-export const children = Symbol("children");
-
 export type XtnDataValue = string | bigint | number | boolean | null | XtnDataObject | XtnDataValue[];
 
 export interface XtnDataObject {
     [key: string]: XtnDataValue;
-    [children]?: XtnDataValue[];
 }
 
 export interface XtnEnvironment {
     integerType?: "number" | "bigint";
-    construct?: (id: XtnIdentifier, args: XtnDataValue[] | null, opts: Record<string, XtnDataValue> | null) => XtnDataValue;
+    resolve?: (id: XtnIdentifier, args: XtnDataValue[] | null, opts: Record<string, XtnDataValue> | null) => XtnDataValue;
+    assign?: (obj: XtnDataObject, key: string, value: XtnDataValue) => void;
+    append?: (obj: XtnDataObject, value: XtnDataValue) => void;
 }
 
 export interface XtnObject extends XtnValueOrPairList {
@@ -203,7 +213,7 @@ class XtnSStringImpl extends XtnElementImpl implements XtnSString {
         super(posStart, posEnd);
     }
 
-    _data(env?: XtnEnvironment): string {
+    data(env?: XtnEnvironment): string {
         return this.value;
     }
 }
@@ -223,7 +233,7 @@ class XtnQStringImpl extends XtnElementImpl implements XtnQString {
         super(posStart, posEnd);
     }
 
-    _data(env?: XtnEnvironment): string {
+    data(env?: XtnEnvironment): string {
         return this.value;
     }
 }
@@ -244,7 +254,7 @@ class XtnMStringImpl extends XtnElementImpl implements XtnMString {
         super(posStart, posEnd);
     }
 
-    _data(env?: XtnEnvironment): string {
+    data(env?: XtnEnvironment): string {
         return this.value;
     }
 }
@@ -263,7 +273,7 @@ class XtnIntegerImpl extends XtnPrimitiveImpl<bigint | null> implements XtnInteg
         super(value, valueString, explicit, posFirstOffset, posStart, posEnd);
     }
 
-    _data(env: XtnEnvironment | undefined): bigint | number | null {
+    data(env: XtnEnvironment | undefined): bigint | number | null {
         if (env?.integerType === "bigint" || this.value === null)
             return this.value;
         return Number(this.value);
@@ -284,7 +294,7 @@ class XtnRealNumberImpl extends XtnPrimitiveImpl<number | null> implements XtnRe
         super(value, valueString, explicit, posFirstOffset, posStart, posEnd);
     }
 
-    _data(env?: XtnEnvironment): number | null {
+    data(env?: XtnEnvironment): number | null {
         return this.value;
     }
 }
@@ -303,7 +313,7 @@ class XtnBooleanImpl extends XtnPrimitiveImpl<boolean | null> implements XtnBool
         super(value, valueString, explicit, posFirstOffset, posStart, posEnd);
     }
 
-    _data(env?: XtnEnvironment): boolean | null {
+    data(env?: XtnEnvironment): boolean | null {
         return this.value;
     }
 }
@@ -323,7 +333,7 @@ class XtnReferenceImpl extends XtnElementImpl implements XtnReference {
         super(posStart, posEnd);
     }
 
-    _data(env?: XtnEnvironment): XtnDataValue {
+    data(env?: XtnEnvironment): XtnDataValue {
         // TODO: Handle properly
         return this.value;
     }
@@ -344,7 +354,7 @@ class XtnNullImpl extends XtnElementImpl implements XtnNull {
         super(posStart, posEnd);
     }
 
-    _data(env?: XtnEnvironment): null {
+    data(env?: XtnEnvironment): null {
         return null;
     }
 }
@@ -364,7 +374,7 @@ class XtnErrorTokenImpl extends XtnElementImpl implements XtnErrorToken {
         super(posStart, posEnd);
     }
 
-    _data(env?: XtnEnvironment): string {
+    data(env?: XtnEnvironment): string {
         return this.value;
     }
 }
@@ -381,8 +391,8 @@ class XtnArrayImpl extends XtnElementImpl implements XtnArray {
         super(posStart, posEnd);
     }
 
-    _data(env: XtnEnvironment | undefined): XtnDataValue[] {
-        return this.items.map(item => item._data(env));
+    data(env: XtnEnvironment | undefined): XtnDataValue[] {
+        return this.items.map(item => item.data(env));
     }
 }
 
@@ -438,13 +448,13 @@ class XtnExpressionImpl extends XtnElementImpl implements XtnExpression {
         super(posStart, posEnd);
     }
 
-    _data(env: XtnEnvironment | undefined): XtnDataValue {
-        if (!env?.construct) {
+    data(env: XtnEnvironment | undefined): XtnDataValue {
+        if (!env?.resolve) {
             throw new Error("An env with a construct method must be provided");
         }
-        const args = this.args?.items.filter(a => a.type !== "keyvaluepair").map(a => a._data(env)) || null;
-        const opts = this.args?.items.filter(a => a.type === "keyvaluepair").map(a => [a.key.name, a.value._data(env)]) || null;
-        const obj = env.construct(this.identifier, args, opts ? Object.fromEntries(opts) : null);
+        const args = this.args?.items.filter(a => a.type !== "keyvaluepair").map(a => a.data(env)) || null;
+        const opts = this.args?.items.filter(a => a.type === "keyvaluepair").map(a => [a.key.name, a.value.data(env)]) || null;
+        const obj = env.resolve(this.identifier, args, opts ? Object.fromEntries(opts) : null);
         if (this.initializer) {
             if (obj == null) {
                 throw new Error(`Initializer could not be applied because the constructed object for ${this.identifier.name} is ${obj === null ? "null" : "undefined"}`);
@@ -512,13 +522,15 @@ class XtnObjectImpl extends XtnValueOrPairListImpl implements XtnObject {
     _fillData(obj: XtnDataObject, env: XtnEnvironment | undefined) {
         for (const item of this.items) {
             if (item.type === "keyvaluepair") {
-                obj[item.key.name] = item.value._data(env);
+                const k = item.key.name;
+                const v = item.value.data(env);
+                if (item.value.childMarkerPosition)
+                    env?.assign?.(obj, k, v);
+                else
+                    obj[k] = v;
             }
             else {
-                let c = obj[children];
-                if (!c)
-                    obj[children] = c = [];
-                c.push(item._data(env));
+                env?.append?.(obj, item.data(env));
             }
         }
     }
@@ -704,7 +716,7 @@ function isKeyLetter(char: string) {
 
 class Parser {
     constructor(readonly document: string) {
-        this._scopeStates = [this._scopeState = { scope: this.rootObj, state: { childMarkerPosition: undefined, allowKeys: true } }];
+        this._scopeStates = [this._scopeState = { scope: this.rootObj, state: { plusPosition: undefined, allowKeys: true } }];
         this._consumers.push(this.consumeObject);
         this._consumer = this.consumeObject;
     }
@@ -740,7 +752,7 @@ class Parser {
     private _scopeState: {
         scope: XtnArrayImpl | XtnValueOrPairListImpl | XtnKeyValuePairImpl | XtnExpressionImpl | XtnIdentifierImpl | XtnIdentifierSegmentImpl;
         state: {
-            childMarkerPosition: XtnCharPosition | undefined;
+            plusPosition: XtnCharPosition | undefined;
             allowKeys: boolean;
         }
     };
@@ -748,7 +760,7 @@ class Parser {
     private get currentScopeState() { return this._scopeState.state; }
     private _scopeStates: (Parser["_scopeState"])[];
     private pushScope(scope: XtnArrayImpl | XtnValueOrPairListImpl | XtnKeyValuePairImpl | XtnExpressionImpl | XtnIdentifierImpl | XtnIdentifierSegmentImpl, allowKeys: boolean) {
-        this._scopeStates.push(this._scopeState = { scope, state: { childMarkerPosition: undefined, allowKeys } });
+        this._scopeStates.push(this._scopeState = { scope, state: { plusPosition: undefined, allowKeys } });
     }
     private popScope() {
         const ss = this._scopeStates;
@@ -793,17 +805,16 @@ class Parser {
     }
     private completeValue(value: XtnValueImpl) {
         const scope = this.currentScope;
-        const cmp = this.currentScopeState.childMarkerPosition;
+        const cmp = this.currentScopeState.plusPosition;
+        value.childMarkerPosition = cmp;
         if (scope instanceof XtnKeyValuePairImpl) {
             this.popConsumer();
             this.popScope();
             scope.value = value;
-            if (cmp)
-                value.childMarkerPosition = cmp;
             const parentScope = this.currentScope;
             if (parentScope instanceof XtnValueOrPairListImpl) {
                 parentScope.items.push(scope);
-                this.currentScopeState.childMarkerPosition = undefined;
+                this.currentScopeState.plusPosition = undefined;
             }
             else {
                 // error: probably not reachable
@@ -812,7 +823,7 @@ class Parser {
         }
         else if ("items" in scope) {
             scope.items.push(value);
-            this.currentScopeState.childMarkerPosition = undefined;
+            this.currentScopeState.plusPosition = undefined;
         }
         else {
             // error: probably not reachable
@@ -1254,7 +1265,7 @@ class Parser {
             this.disableNext = true;
         }
         else if (plusForChildren && char === '+') {
-            this.currentScopeState.childMarkerPosition = {line: this.lineNo, column: this.colNo, index: this.pos};
+            this.currentScopeState.plusPosition = {line: this.lineNo, column: this.colNo, index: this.pos};
         }
         else if (char === '"' || char === "'") {
             this.startQuote(char, next);
@@ -1332,7 +1343,7 @@ class Parser {
             this.startUnquotedText(char, next);
         }
         else if (!plusForChildren && char === '+') {
-            this.currentScopeState.childMarkerPosition = { line: this.lineNo, column: this.colNo, index: this.pos };
+            this.currentScopeState.plusPosition = { line: this.lineNo, column: this.colNo, index: this.pos };
         }
         else if (char !== ',' && char !== '\0') {
             const ps = { line: this.lineNo, column: this.colNo, index: this.pos };
@@ -1953,9 +1964,9 @@ export interface XtnParseError {
     message: string;
 }
 
-type ParseResult = { succeeded: true; result: XtnObject; } | { succeeded: false; partial: XtnObject; errors: XtnParseError[]; }
+type ParseResult = { succeeded: true; result: XtnValue; } | { succeeded: false; partial: XtnValue; errors: XtnParseError[]; }
 
-export function parseXtn(document: string): XtnObject{
+export function parseXtn(document: string): XtnValue {
     const pr = tryParseXtn(document);
     if (pr.succeeded) return pr.result;
     const err = pr.errors[0];
@@ -1963,7 +1974,14 @@ export function parseXtn(document: string): XtnObject{
 }
 export function tryParseXtn(document: string): ParseResult {
     const p = new Parser(document);
-    const result = p.parse();
+    const rootObj = p.parse();
+    let result, first;
+    if (rootObj.items.length === 1 && (first = rootObj.items[0]).type !== "keyvaluepair" && !first.childMarkerPosition) {
+        result = first;
+    }
+    else {
+        result = rootObj;
+    }
     if (p.errors.length === 0) {
         return ({
             succeeded: true,

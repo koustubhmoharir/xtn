@@ -13,6 +13,10 @@ export function loadXtnWithErrors(name: string, fromJson = false) {
     const r = tryParseXtn(data);
     return r.succeeded ? { partial: r.result, errors: undefined } : r;
 }
+export function loadXtnWithErrorsFromString(data: string) {
+    const r = tryParseXtn(data);
+    return r.succeeded ? { partial: r.result, errors: undefined } : r;
+}
 export function loadJson(name: string) {
     const data = fs.readFileSync(path.resolve(samplesDir, `${name}.json`), 'utf8');
     return JSON.parse(data);
